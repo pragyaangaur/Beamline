@@ -40,7 +40,6 @@ from __future__ import annotations
 
 import asyncio
 import random
-import signal
 import statistics
 import time
 from collections import deque
@@ -48,6 +47,7 @@ from dataclasses import dataclass, field
 
 import httpx
 
+from . import USER_AGENT
 from .entropy import blocks as B
 from .store import EntropyStore
 
@@ -73,7 +73,7 @@ class HarvestConfig:
     #: Ease off if this share of recent blocks are duplicates.
     duplicate_alarm: float = 0.25
     max_consecutive_failures: int = 8
-    user_agent: str = "beamline-harvester/1.0"
+    user_agent: str = f"{USER_AGENT} (harvester)"
 
 
 @dataclass

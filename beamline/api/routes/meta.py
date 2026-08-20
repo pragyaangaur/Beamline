@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from fastapi import APIRouter
 
+from ... import __version__
 from ...service import SERVICE
 
 router = APIRouter(tags=["meta"])
@@ -31,7 +32,7 @@ async def about():
     """
     return {
         "service": "beamline",
-        "version": "0.1.0",
+        "version": __version__,
         "how_it_works": [
             "Physical sources (ANU quantum vacuum-fluctuation QRNG, NOAA space weather, "
             "the host kernel CSPRNG) are polled continuously.",
