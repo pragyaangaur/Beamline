@@ -128,10 +128,22 @@ class TestSp80022DetectsDefects:
         assert self._failures(np.unpackbits(np.array(out, dtype=np.uint8)))
 
     def test_good_sources_pass(self):
-        assert not self._failures(rand_bits(N // 8))
-        digest = b"".join(hashlib.sha256(i.to_bytes(8, "big")).digest()
-                          for i in range(N // 8 // 32))
-        assert not self._failures(S.bytes_to_bits(digest))
+        """A good source may fire one test by chance; it must not fire two.
+
+        Demanding zero failures here would be wrong, and flaky: at alpha = 0.01 across
+        roughly twelve tests, a perfect source trips at least one about 11% of the time,
+        which was measured at 2 of 12 trials before this tolerance was added. Allowing
+        one failure keeps the real signal (a broken generator fires many tests at once,
+        as the cases above do) while giving a false alarm probability under 1%.
+        """
+        for label, bits in (
+            ("os.urandom", rand_bits(N // 8)),
+            ("SHA-256 counter", S.bytes_to_bits(
+                b"".join(hashlib.sha256(i.to_bytes(8, "big")).digest()
+                         for i in range(N // 8 // 32)))),
+        ):
+            failures = self._failures(bits)
+            assert len(failures) <= 1, f"{label} fired {len(failures)} tests: {failures}"
 
 
 class TestSp80090B:

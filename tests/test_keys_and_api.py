@@ -152,7 +152,7 @@ class TestBeacon:
             beacon.derive(99, "t", 8)
 
     def test_signed_pulses_verify_and_reject_wrong_key(self, db):
-        crypto = pytest.importorskip("cryptography")
+        pytest.importorskip("cryptography")
         from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 
         pool = EntropyPool()
