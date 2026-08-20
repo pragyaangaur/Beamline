@@ -1,6 +1,6 @@
 [project]
 name = "beamline"
-version = "0.1.0"
+version = "1.0.0"
 description = "Physically-sourced randomness as a service, with a verifiable public beacon."
 requires-python = ">=3.11"
 dependencies = [

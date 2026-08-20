@@ -25,7 +25,7 @@ DRBG output (is the delivery path sound?).
 from __future__ import annotations
 
 import math
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 
 import numpy as np
 
@@ -533,7 +533,7 @@ def cumulative_sums(bits: np.ndarray) -> TestResult:
             sub += (normal_cdf((4 * k + 3) * z / math.sqrt(n))
                     - normal_cdf((4 * k + 1) * z / math.sqrt(n)))
         results.append(max(0.0, min(1.0, 1.0 - total + sub)))
-    return _ok("Cumulative Sums", results, f"forward/backward z-max")
+    return _ok("Cumulative Sums", results, "forward and backward")
 
 
 # ---------------------------------------------------------------------------
@@ -551,7 +551,6 @@ _EXCURSION_PI = {
 
 
 def random_excursions(bits: np.ndarray) -> TestResult:
-    n = len(bits)
     x = 2 * bits.astype(np.int64) - 1
     s = np.concatenate([[0], np.cumsum(x), [0]])
     zero_positions = np.flatnonzero(s == 0)
@@ -577,7 +576,6 @@ def random_excursions(bits: np.ndarray) -> TestResult:
 
 
 def random_excursions_variant(bits: np.ndarray) -> TestResult:
-    n = len(bits)
     x = 2 * bits.astype(np.int64) - 1
     s = np.concatenate([[0], np.cumsum(x), [0]])
     J = int(np.count_nonzero(s == 0)) - 1

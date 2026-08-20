@@ -30,11 +30,11 @@ property. See `entropy/beacon.py`.
 
 from __future__ import annotations
 
-import json
 import struct
 
 import httpx
 
+from .. import USER_AGENT
 from .base import Sample, Source
 
 FEEDS = {
@@ -63,7 +63,7 @@ class AstroSource(Source):
         self.interval = interval
         self._client = httpx.AsyncClient(
             timeout=20.0,
-            headers={"User-Agent": "beamline/0.1 (space weather client)"},
+            headers={"User-Agent": USER_AGENT},
         )
         self._last_tags: dict[str, str] = {}
 

@@ -20,6 +20,7 @@ from typing import Any
 import httpx
 
 from . import verify as _v
+from . import __version__ as _version
 
 DEFAULT_BASE = "https://api.beamline.dev"
 
@@ -79,7 +80,7 @@ class Beamline:
             base_url=base_url.rstrip("/"),
             timeout=timeout,
             headers={"Authorization": f"Bearer {api_key}",
-                     "User-Agent": "beamline-python/0.1"},
+                     "User-Agent": f"beamline-python/{_version}"},
         )
 
     # --- transport --------------------------------------------------------

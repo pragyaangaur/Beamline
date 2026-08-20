@@ -6,18 +6,17 @@
 
 # --- harvested entropy -------------------------------------------------------
 # NEVER commit anything under data/. It holds the raw quantum blocks that seeded
-# past beacon pulses and the key-hash database. Publishing the archive would
+# past beacon pulses, plus the key-hash database. Publishing the archive would
 # publish the material behind pulses that have already been signed, and would let
 # anyone recompute pool state that is supposed to be private.
 # Note: 'data/*' rather than 'data/' -- git does not descend into an excluded
-# directory, so the negations below would never be considered.
+# directory, so the negation below would never be considered.
 data/*
-!data/README.md
 !data/.gitkeep
 
 # --- generated reports -------------------------------------------------------
 # Regenerable with scripts/run_nist_tests.py. The curated results that are meant
-# to be read live in docs/ENTROPY.md; the machine-readable report is kept.
+# to be read live in the README; the machine-readable report is kept.
 reports/*.txt
 reports/*.log
 

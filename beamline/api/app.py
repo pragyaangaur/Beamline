@@ -6,6 +6,7 @@ import logging
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
+from .. import __version__
 from ..service import SERVICE
 from .routes import admin, beacon, meta, random as random_routes
 
@@ -23,7 +24,7 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(
     title="Beamline",
-    version="0.1.0",
+    version=__version__,
     description=(
         "Physically-sourced randomness with a publicly verifiable beacon.\n\n"
         "See `GET /v1/about` for exactly what this service does and does not guarantee."

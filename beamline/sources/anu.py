@@ -26,8 +26,6 @@ network for a customer request, because the DRBG stands between the two.
 
 from __future__ import annotations
 
-from pathlib import Path
-
 import httpx
 
 from ..config import CONFIG
@@ -35,7 +33,8 @@ from ..entropy import blocks as B
 from ..store import EntropyStore
 from .base import Sample, Source
 
-USER_AGENT = "beamline/1.0 (entropy client)"
+from .. import USER_AGENT
+
 OFFICIAL_API = "https://api.quantumnumbers.anu.edu.au/API/jsonI.php"
 
 

@@ -12,7 +12,6 @@ from __future__ import annotations
 
 import argparse
 import json
-import os
 import sys
 
 from . import keys as keylib
@@ -82,9 +81,11 @@ def _cmd_beacon_key(args) -> int:
     pub = sk.public_key().public_bytes_raw().hex()
     print(f"\n  BEAMLINE_BEACON_KEY={priv}\n")
     print(f"  public key (publish this): {pub}\n")
-    print("  Store the private key in your secret manager. Rotating it breaks the")
-    print("  verifiability of every pulse signed with the old key, so publish both")
-    print("  keys and the rotation round if you ever rotate.\n")
+    print("  Store the private key in a secret manager, not an environment variable.")
+    print("  If it leaks, every pulse ever signed with it becomes deniable.\n")
+    print("  Rotation is safe: each pulse carries the key that signed it, so a chain")
+    print("  verifier reports the round where the key changed instead of silently")
+    print("  failing. Announce the rotation round so the change is expected.\n")
     return 0
 
 
