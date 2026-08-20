@@ -1,0 +1,50 @@
+# --- secrets -----------------------------------------------------------------
+# The beacon signing key and admin token live here in development.
+.env
+*.pem
+*.key
+
+# --- harvested entropy -------------------------------------------------------
+# NEVER commit anything under data/. It holds the raw quantum blocks that seeded
+# past beacon pulses and the key-hash database. Publishing the archive would
+# publish the material behind pulses that have already been signed, and would let
+# anyone recompute pool state that is supposed to be private.
+# Note: 'data/*' rather than 'data/' -- git does not descend into an excluded
+# directory, so the negations below would never be considered.
+data/*
+!data/README.md
+!data/.gitkeep
+
+# --- generated reports -------------------------------------------------------
+# Regenerable with scripts/run_nist_tests.py. The curated results that are meant
+# to be read live in docs/ENTROPY.md; the machine-readable report is kept.
+reports/*.txt
+reports/*.log
+
+# --- python ------------------------------------------------------------------
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+*.egg-info/
+.eggs/
+build/
+dist/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# --- javascript --------------------------------------------------------------
+node_modules/
+package-lock.json
+
+# --- editors / os ------------------------------------------------------------
+.DS_Store
+.idea/
+.vscode/
+*.swp
+
+# local editor/tooling config
+.claude/

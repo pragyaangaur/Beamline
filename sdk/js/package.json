@@ -1,0 +1,12 @@
+{
+  "name": "@beamline/client",
+  "version": "0.1.0",
+  "description": "Beamline randomness client with local beacon verification",
+  "type": "module",
+  "main": "index.js",
+  "exports": { ".": "./index.js" },
+  "files": ["index.js", "README.md"],
+  "engines": { "node": ">=18" },
+  "keywords": ["random", "rng", "quantum", "beacon", "provably-fair", "entropy"],
+  "license": "MIT"
+}

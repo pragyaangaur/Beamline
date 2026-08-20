@@ -1,0 +1,62 @@
+{
+ "tag": "midsummer-giveaway-2026",
+ "winners": [
+  1406,
+  4432,
+  277
+ ],
+ "entrants": 4820,
+ "pulse": {
+  "version": "beamline/pulse/v2",
+  "round": 8,
+  "timestamp_ms": 1787150384001,
+  "period_seconds": 8,
+  "prev_output": "7c40793fb19797d286eb1583c84450ea3d3ce41192b8a605e76dcb8a8ad2d947a3f4852de8147158ce86c317797abec3fd53b15eabc2172758bec510e8c2b795",
+  "local_value": "d2e0075e9af2fc95b0dabada7efd4ecd189e6546e700a359ca90a6240a208cbae011d995bc309b425d719fcbf4f26a4e71dcc23550298a3f5ae56408bc60f67a",
+  "public_key": "1e83433f5b22f106fe358e8594a7e9d248955831f13d9c1938aeb263fa30594b",
+  "provenance": {
+   "local_os": {
+    "at": 1787150381.666553,
+    "bytes": 64,
+    "digest": "25ac6f760a20c75498326f7573c6157af64a563ad73e1516060a3f3884903492",
+    "provider": "kernel getrandom(2)"
+   },
+   "anu_qrng": {
+    "at": 1787150382.816902,
+    "bytes": 1530,
+    "digest": "0c404cf4d450cada3860673524000f6e7fb3b3bdcf53f39b62ee0901f9b32b3a",
+    "provider": "local_archive",
+    "blocks": 2,
+    "chars": 2048,
+    "source_entropy_bits": 12241,
+    "remaining_blocks": 4251
+   },
+   "astro": {
+    "at": 1787150328.258965,
+    "bytes": 871,
+    "digest": "be884aeb98b80a2d3a23b93da48b345a2b449850715604265c1e19b17de4676c",
+    "feeds": {
+     "goes_xray": {
+      "rows": 6,
+      "latest_time_tag": "2026-08-19T14:34:00Z"
+     },
+     "solar_wind_plasma": {
+      "rows": 6,
+      "latest_time_tag": "2026-08-18T14:36:00"
+     },
+     "solar_wind_mag": {
+      "rows": 6,
+      "latest_time_tag": "2026-08-18T14:36:00"
+     }
+    },
+    "advanced": true
+   }
+  },
+  "output": "2ca25ca1582792f981497a315d7a5d3729678508cc45e8422ff1e739dc3eaef77b357bb39195ea2fa9fdf8d54af561aa0bac296768958f9ee80f69bed7fca815",
+  "signature": "ef165845b515921bdbab4929604eb22a94b73f87b803a285fdb86e6f4ca070bafce3c3738cb42a7c0cb3b192409eb918d17f1522e241e07a2af8ef24c4a0fb03"
+ },
+ "publicKey": "1e83433f5b22f106fe358e8594a7e9d248955831f13d9c1938aeb263fa30594b",
+ "min": 1,
+ "max": 4820,
+ "count": 3
+}
