@@ -4,6 +4,8 @@ Randomness you can prove.
 
 Beamline harvests entropy from a quantum source (the ANU vacuum-fluctuation QRNG), real-time astrophysical measurements (NOAA space weather), and the host kernel CSPRNG. It mixes them in a health-monitored accumulator, and uses the result to seed a NIST SP 800-90A DRBG that serves the API. Every minute it publishes a signed, hash-chained beacon pulse that anyone can verify without an account, which is what lets a draw be shown to be fair after the fact.
 
+[Try it in your browser](https://pragyaangaur.github.io/Beamline/): run a draw against a real signed pulse, then tamper with it and watch the verification fail. Nothing to install, and the page makes no network calls.
+
 ```bash
 pip install -e ".[dev,qa]"
 ```
@@ -138,6 +140,26 @@ The chain proves ordering and tamper-evidence. It does not, by itself, prove the
 
 ## Demos
 
+### The interactive demo
+
+[pragyaangaur.github.io/Beamline](https://pragyaangaur.github.io/Beamline/) is the public demonstration, served from [`docs/`](docs/). It is a single self-contained file with ten real signed pulses baked into it, and it does three things a description cannot.
+
+First, it runs a draw. Name it, choose the pulse that will fix it, and the winners are derived in the browser by the same rejection sampling the server uses. Run it twice for identical numbers. Change one character of the name and the numbers are entirely different, with no way to steer them anywhere in particular.
+
+Second, it invites tampering. Every field of the pulse is editable, with one-click shortcuts for rewriting the entropy, backdating the timestamp, forging the signature, and swapping the output hash the winners are derived from. Four checks then report precisely what broke. Rewriting the output really does change the winners, which is the part worth seeing: the numbers can be moved, and the move is visible to anyone who runs the checks.
+
+Third, it lets a visitor rewrite history. Altering round 5 leaves the pulse after it no longer fitting, and repairing that one moves the break forward. Repair the whole chain and it becomes internally consistent again, with six pulses that no longer carry a valid signature. Rewriting a chain is arithmetic anyone can do. Re-signing it needs the private key.
+
+The verifier on that page shares no code with the server: it reimplements the pulse and derivation spec from scratch, and its output was cross-checked against `beamline.generators` for both the dense and the sparse sampling strategy. [`tests/test_site.py`](tests/test_site.py) re-verifies the embedded chain with the Python SDK on every test run, because a published page that demonstrates Beamline's own verification failing would be worse than having no page at all.
+
+The embedded pulses come from a real service run rather than a fixture. Regenerate them with:
+
+```bash
+python scripts/build_site_data.py --rounds 10 --spacing 6
+```
+
+That starts the service against a throwaway database, lets the entropy sources poll, emits a signed chain, and injects it back into the page. To publish the result, point Settings then Pages at the `main` branch and the `/docs` folder.
+
 ### The user journey
 
 The fastest way to understand what Beamline feels like in use:
@@ -159,6 +181,8 @@ Six scenes run against a live local server, with nothing mocked: a developer get
 The page carries a real beacon pulse, including its round, timestamp, output hash, Ed25519 signature, and the NOAA space-weather readings mixed into it. The verify button then does the whole check client-side with WebCrypto: it recomputes the pulse output hash from the pulse contents, re-derives the winning numbers from that hash using the same rejection sampling the server used, and checks the Ed25519 signature against the key the pulse declares. There is no server call, no API key, and no need to trust whoever ran the draw. Altering any field in the embedded pulse makes the check fail, which is the point.
 
 The embedded data was captured from a live Beamline instance. The draw itself is an illustration. `examples/_draw_data.json` holds the same payload separately for anyone who wants to rebuild the page.
+
+That page is the record of one finished draw. The interactive demo above is the version where the visitor chooses the draw, edits the pulse, and breaks the chain themselves.
 
 ## API reference
 
@@ -487,7 +511,7 @@ The reframe is this. Beamline is the fairness layer for anything drawn, picked, 
 
 *Hosted public draw pages.* A customer creates a draw, gets a public URL, and publishes it before the pulse exists. Afterwards the page shows entrants, the pulse, the result, and a "verify this yourself" button running the JavaScript verifier client-side. The page is the product and the API is plumbing. This is the whole business in one artifact, and it is shareable: every draw page markets Beamline to an audience already primed to be suspicious, which is precisely the audience that converts. It prices at $19 to $99 per month to businesses, not $5 to developers. A working prototype of the verification half is in [`examples/draw_page.html`](examples/draw_page.html).
 
-*Verification as a free public good.* Verifier libraries, a `/verify` web page, the chain, and the public key: free, unauthenticated, forever. The asymmetry is the moat. Anyone can check a Beamline draw, but only customers can make one, and free verification is what makes the paid side worth anything.
+*Verification as a free public good.* Verifier libraries, a `/verify` web page, the chain, and the public key: free, unauthenticated, forever. The asymmetry is the moat. Anyone can check a Beamline draw, but only customers can make one, and free verification is what makes the paid side worth anything. The interactive demo in [`docs/`](docs/) is the first piece of this: a stranger can run a draw, tamper with the pulse, and rewrite the chain without an account or an API key.
 
 **Tier 2, natural follow-ons.**
 
@@ -542,7 +566,7 @@ The arithmetic that settles it: at $5 to $10 per month, roughly 1,000 paying dev
 
 ## Status
 
-V1, and honest about what that means. The cryptographic core, the beacon, both SDKs, and the test suites are complete and covered. The hosted draw pages described above are not built yet, beyond the verification prototype in `examples/`.
+V1, and honest about what that means. The cryptographic core, the beacon, both SDKs, and the test suites are complete and covered. The hosted draw pages described above are not built yet, beyond two verification prototypes: the static draw record in `examples/` and the interactive demo in `docs/`.
 
 ## License
 
