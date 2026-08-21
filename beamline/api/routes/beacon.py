@@ -11,7 +11,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
 
 from ... import generators as gen
-from ...entropy.beacon import verify_commitment, verify_pulse
+from ...entropy.beacon import verify_chain, verify_commitment, verify_pulse
 from ...service import SERVICE
 from ..deps import Principal, bill, require_key
 
@@ -34,7 +34,10 @@ async def public_key():
         "signed": bool(SERVICE.beacon.public_key_hex),
         "note": "Unsigned pulses are still hash-chained and tamper-evident to anyone "
                 "who recorded an earlier pulse, but cannot be attributed to Beamline "
-                "by a third party.",
+                "by a third party, and verification treats them as unattributed.",
+        "pin_this_key": "Record this key out of band. A verifier that fetches the key "
+                        "from the same server as the pulses checks only that the "
+                        "server agrees with itself.",
     }
 
 
@@ -53,18 +56,57 @@ async def chain(start: int = Query(1, ge=1), count: int = Query(50, ge=1, le=500
 
 @router.get("/verify/{round_no}")
 async def verify(round_no: int):
-    """Server-side convenience check. The real verification is the client doing this itself."""
+    """Server-side convenience check. The real verification is the client doing this itself.
+
+    Note what this endpoint cannot do for you. It is the operator answering a question
+    about the operator's own chain: if the service were dishonest, so would this be.
+    It is here to catch transport corruption and to show what the checks look like --
+    not to substitute for running `beamline_client.verify` against a key you obtained
+    somewhere other than from us.
+    """
     p = SERVICE.beacon.get(round_no)
     if p is None:
         raise HTTPException(404, f"pulse {round_no} not found")
     prev = SERVICE.beacon.get(round_no - 1)
+    signed = bool(SERVICE.beacon.public_key_hex)
     ok, reason = verify_pulse(
         p,
         prev_output=prev["output"] if prev else None,
         public_key_hex=SERVICE.beacon.public_key_hex,
+        # An unsigned deployment cannot attribute anything. Earlier this fell through
+        # to "valid: true" because there was no key to check against, which reported a
+        # missing signature as a passing verification.
+        allow_unsigned=not signed,
     )
-    return {"round": round_no, "valid": ok, "reason": reason,
-            "chain_verified_against": round_no - 1 if prev else "genesis"}
+    return {
+        "round": round_no,
+        "valid": ok,
+        "reason": reason,
+        "attributable": ok and signed,
+        "chain_verified_against": round_no - 1 if prev else "genesis",
+        "checked_against_key": SERVICE.beacon.public_key_hex,
+        "note": ("This is the operator checking their own chain. Verify independently "
+                 "with the SDK against a key you did not fetch from this server."),
+    }
+
+
+@router.get("/verify-chain")
+async def verify_chain_route(start: int = Query(1, ge=1), count: int = Query(50, ge=1, le=500)):
+    """Verify a run of pulses end to end: links, ordering, and signatures together.
+
+    Per-pulse checks miss the things that only exist across pulses -- a hole where a
+    round was withheld, timestamps that do not increase -- and those are precisely
+    what an archive assembled after the fact gets wrong.
+    """
+    pulses = SERVICE.db.pulse_range(start, count)
+    if not pulses:
+        raise HTTPException(404, f"no pulses from round {start}")
+    signed = bool(SERVICE.beacon.public_key_hex)
+    ok, reason = verify_chain(pulses, SERVICE.beacon.public_key_hex,
+                              allow_unsigned=not signed)
+    return {"start": pulses[0]["round"], "end": pulses[-1]["round"],
+            "count": len(pulses), "valid": ok, "reason": reason,
+            "attributable": ok and signed}
 
 
 class CommitRequest(BaseModel):
