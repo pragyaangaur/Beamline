@@ -152,5 +152,45 @@ console.log("\ncanonical bytes match the Python encoder");
   }
 }
 
+/* The customer-facing artifact carries its own copy of the same verifier, so it gets
+   the same treatment. Its verify() is DOM-bound, but the encoder and the structural
+   gate in front of the crypto are not, and those are what the attacks went through. */
+console.log("\nexamples/draw_page.html agrees with the Python encoder and rejects malformed pulses");
+{
+  const PAGE = readFileSync(join(ROOT, "examples", "draw_page.html"), "utf8");
+  const a = PAGE.indexOf("/* Canonical pulse bytes.");
+  const b = PAGE.indexOf("/* The deterministic stream a pulse and tag expand to. */");
+  if (a < 0 || b <= a) { console.log("  FAIL  cannot locate the verifier in draw_page.html"); failures++; }
+  else {
+    const P = new Function("TextEncoder", `
+      const enc = new TextEncoder();
+      ${PAGE.slice(a, b)}
+      return { cenc, canonical, structureError, commitBody };
+    `)(TextEncoder);
+
+    const vectors = JSON.parse(readFileSync(join(ROOT, "tests", "data", "canonical_vectors.json"), "utf8"));
+    let mismatched = 0;
+    for (const v of vectors) {
+      let got; try { got = P.cenc(v.value, "$"); } catch (e) { got = "ERROR"; }
+      if (got !== v.encoded) mismatched++;
+    }
+    check("canonical encoder matches the Python vectors", mismatched === 0, `${mismatched} differ`);
+
+    const record = JSON.parse(
+      /<script id="draw-data" type="application\/json">(.*?)<\/script>/s.exec(PAGE)[1]);
+    check("the published record's pulse is well-formed",
+          P.structureError(record.pulse) === null, String(P.structureError(record.pulse)));
+    check("the published record carries a commitment", !!record.commitment);
+    for (const [label, mutate] of [
+      ["retired version", (p) => ({ ...p, version: "beamline/pulse/v2" })],
+      ["float in the body", (p) => ({ ...p, provenance: { x: { at: 1.5 } } })],
+      ["missing signature", (p) => ({ ...p, signature: null })],
+      ["unparseable key", (p) => ({ ...p, public_key: "not-a-key" })],
+    ]) {
+      check(`rejected: ${label}`, P.structureError(mutate(record.pulse)) !== null);
+    }
+  }
+}
+
 console.log(failures ? `\n${failures} FAILED\n` : "\nall checks passed\n");
 process.exit(failures ? 1 : 0);
