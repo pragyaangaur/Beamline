@@ -118,13 +118,20 @@ def main() -> int:
     say("so 'we picked fairly' is worth nothing coming from them.")
     say()
     tag = f"summer-giveaway-{int(time.time())}"
-    say("Step 1. Announce the draw tag publicly, BEFORE the winning numbers exist:")
-    say(f"        \033[1m{tag}\033[0m")
+    say("Step 1. Register the draw name against a pulse that does not exist yet.")
+    say("        Announcing it in a caption would be the creator's word. Registering it")
+    say("        produces a receipt signed by Beamline, recording where the chain stood")
+    say("        at the time -- which is the part an entrant can check.")
+    show(f"bl.commit('{tag}')")
+    receipt = bl.commit(tag)
+    say(f"-> commit {receipt['commit_id']}")
+    say(f"   names round {receipt['target_round']}, registered while the chain stood at "
+        f"round {receipt['created_after_round']}")
     say()
-    say("Step 2. Wait for the next beacon pulse. It does not exist yet, so neither the")
-    say("        creator nor Beamline can steer it.")
-    show("bl.wait_for_next_pulse()")
-    pulse = bl.wait_for_next_pulse(poll=1.0, timeout=120)
+    say("Step 2. Wait for that pulse. It does not exist yet, so neither the creator nor")
+    say("        Beamline can steer it.")
+    show(f"bl.wait_for_round({receipt['target_round']})")
+    pulse = bl.wait_for_round(receipt["target_round"], poll=1.0, timeout=180)
     say(f"-> pulse {pulse['round']} published at {time.strftime('%H:%M:%S', time.localtime(pulse['timestamp_ms'] / 1000))}")
     say()
     say("        That pulse mixed in live space-weather readings. Its provenance names")
@@ -135,10 +142,15 @@ def main() -> int:
             for feed, info in meta.get("feeds", {}).items():
                 say(f"          {feed:<20} {info.get('latest_time_tag', 'n/a')}")
     say()
-    say("Step 3. Draw 3 winners from 5,000 entrants.")
+    say("Step 3. Draw 3 winners from 5,000 entrants, against the committed round.")
     show(f"bl.fair_draw('{tag}', count=3, min=1, max=5000)")
-    draw = bl.fair_draw(tag, count=3, min=1, max=5000, round=pulse["round"])
+    draw = bl.fair_draw(tag, count=3, min=1, max=5000, round=pulse["round"], commit=False)
+    draw.commitment = bl.commitment(receipt["commit_id"])
     say(f"-> winners: \033[1m{draw.data}\033[0m  (from pulse {draw.round})")
+    say()
+    say("        `bl.fair_draw(tag, ...)` on its own does all three steps: it commits,")
+    say("        waits for the round, and derives. They are spelled out here because")
+    say("        the ordering is the product.")
 
     # ---------------------------------------------------------------- scene 4
     scene(4, "A sceptical viewer checks the result -- with no account")
@@ -153,10 +165,23 @@ def main() -> int:
     ok, why = verify.check_pulse(public_pulse, public_key_hex=pk)
     say(f"-> pulse hash + Ed25519 signature valid: \033[1m{ok}\033[0m ({why})")
     say()
+    show(f"curl $BEAMLINE/v1/beacon/commitment/{receipt['commit_id']}")
+    public_commit = httpx.get(
+        f"{BASE}/v1/beacon/commitment/{receipt['commit_id']}", timeout=10).json()
+    ok_c, why_c = verify.check_commitment(public_commit, public_key_hex=pk)
+    say(f"-> the draw name was registered at round {public_commit['created_after_round']}, "
+        f"before round {public_commit['target_round']} existed: \033[1m{ok_c}\033[0m ({why_c})")
+    say()
     show(f"verify.reproduce_integers(pulse_output, '{tag}', 3, 1, 5000)")
     local = verify.reproduce_integers(public_pulse["output"], tag, 3, 1, 5000)
     say(f"-> recomputed independently: \033[1m{local}\033[0m")
     say(f"-> matches the announced winners: \033[1m{local == draw.data}\033[0m")
+    say()
+    ok_d, why_d = verify.check_draw(public_pulse, public_commit, draw.data, pk,
+                                    count=3, minimum=1, maximum=5000)
+    say(f"All four questions at once -- authentic pulse, authentic receipt, receipt")
+    say(f"names this draw, numbers reproduce:")
+    say(f"-> \033[1m{ok_d}\033[0m ({why_d})")
     say()
     chain = httpx.get(f"{BASE}/v1/beacon/chain?start=1&count=200", timeout=15).json()["pulses"]
     ok, msg = verify.check_chain(chain, pk)
@@ -185,10 +210,29 @@ def main() -> int:
     say("And because pulses are chained, rewriting an old one invalidates every pulse")
     say("after it, which anyone holding a later pulse can see.")
     say()
-    say("The honest limit, stated plainly: this proves ordering and tamper-evidence.")
-    say("It does not by itself prove the operator never withheld a pulse they disliked")
-    say("and waited for the next one. Publishing the tag first is what closes that gap")
-    say("for the creator; anchoring pulses to an external log closes it for Beamline.")
+    say("c) The cheat that forges nothing at all. With the pulse already published, the")
+    say("   creator tries draw names until one crowns the entrant they wanted. Every")
+    say("   result is genuine, reproducible, and signed:")
+    entrants, target = 5000, 1234
+    for tries in range(1, 20001):
+        rigged_tag = f"{tag}-v{tries}"
+        if verify.reproduce_integers(public_pulse["output"], rigged_tag, 1, 1, entrants)[0] == target:
+            break
+    say(f"   found '{rigged_tag}' after {tries} tries -- it really does draw #{target}")
+    ok3, why3 = verify.check_draw(public_pulse, public_commit, [target], pk,
+                                  count=1, minimum=1, maximum=entrants)
+    say(f"   -> but the receipt names '{public_commit['tag']}', not that one: "
+        f"\033[1mvalid={ok3}\033[0m")
+    say(f"      ({why3})")
+    say()
+    say("   This is the attack the commitment exists for, and the only one of the three")
+    say("   that a hash chain and a signature cannot see. Nothing about the rigged draw")
+    say("   is forged; it was simply chosen after the outcome was known.")
+    say()
+    say("The honest limit, stated plainly: this proves ordering and tamper-evidence, and")
+    say("the receipt proves the creator named the draw first. It does not by itself prove")
+    say("Beamline never withheld a pulse it disliked and re-rolled. Anchoring pulses to an")
+    say("external log is what would close that last gap, and it is not built yet.")
 
     # ---------------------------------------------------------------- scene 6
     scene(6, "An auditor pulls a defensible sample")
@@ -197,13 +241,16 @@ def main() -> int:
     say()
     audit_tag = f"Q3-AP-invoice-sample-{int(time.time())}"
     show(f"bl.fair_draw('{audit_tag}', count=8, min=1, max=40000)")
-    sample = bl.fair_draw(audit_tag, count=8, min=1, max=40000)
+    sample = bl.fair_draw(audit_tag, count=8, min=1, max=40000, timeout=180)
     say(f"-> invoices: {sample.data}")
-    say(f"-> reproducible from pulse {sample.round}: \033[1m{sample.verify()}\033[0m")
+    say(f"-> committed before the deciding pulse: \033[1m{sample.committed}\033[0m")
+    say(f"-> verifies end to end: \033[1m{sample.verify()}\033[0m")
     say()
-    say("The workpaper cites the tag, the pulse round, and the pulse hash. A reviewer")
+    say("The workpaper cites the tag, the commit id, the pulse round, and the pulse")
+    say("hash. A reviewer")
     say("years later can recompute the same eight invoice numbers and confirm the")
-    say("sample was fixed before anyone looked at the population.")
+    say("sample was fixed before anyone looked at the population -- not merely that it")
+    say("reproduces, which a sample chosen afterwards would also do.")
 
     print()
     print("=" * W)
