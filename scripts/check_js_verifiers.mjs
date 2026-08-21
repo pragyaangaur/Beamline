@@ -1,13 +1,16 @@
-/* Run the demo page's OWN verifier against forged input, outside a browser.
+/* Attack every JavaScript verifier Beamline ships, outside a browser.
  *
- * docs/index.html invites strangers to try to fool it, which makes its verifier a
- * piece of security-critical code that ships with no test around it. It shipped a
- * fail-open catch block for months: crash the signature check and the page reported
- * success. So the functions are lifted out of the page verbatim and attacked here.
+ * There are three of them -- the demo page, the published draw record, and the JS SDK
+ * -- and all three were security-critical code with no test around them. The demo page
+ * shipped a fail-open catch block, so crashing the signature check reported success.
+ * The SDK did not check signatures at all.
  *
- *     node scripts/check_site_verifier.mjs
+ * The page verifiers are lifted out of their real files by slicing, not by copying: a
+ * copy drifts, and then the copy is the thing under test.
  *
- * Exits non-zero on the first failure, so CI can run it.
+ *     node scripts/check_js_verifiers.mjs
+ *
+ * Exits non-zero if anything fails, so CI can run it.
  */
 import { readFileSync } from "node:fs";
 import { webcrypto } from "node:crypto";
@@ -190,6 +193,43 @@ console.log("\nexamples/draw_page.html agrees with the Python encoder and reject
       check(`rejected: ${label}`, P.structureError(mutate(record.pulse)) !== null);
     }
   }
+}
+
+console.log("\nthe JavaScript SDK refuses what the Python one refuses");
+{
+  const SDK = await import(new URL("../sdk/js/index.js", import.meta.url));
+  const real = BUNDLE.pulses;
+
+  check("genuine chain accepted", (await SDK.checkChain(real, BUNDLE.public_key))[0]);
+  check("no trust anchor is refused", !(await SDK.checkChain(real))[0]);
+  check("wrong key is refused", !(await SDK.checkChain(real, "ab".repeat(32)))[0]);
+
+  const forged = await forgeChain(6, null);
+  check("unsigned forgery refused", !(await SDK.checkChain(forged, BUNDLE.public_key))[0]);
+  check("unsigned forgery refused without an anchor too", !(await SDK.checkChain(forged))[0]);
+
+  const c = BUNDLE.commitment;
+  const pulse = real.find((p) => p.round === c.target_round);
+  const drawn = await SDK.reproduceIntegers(pulse.output, c.tag, 1, 1, 5000);
+  check("committed draw verifies",
+        (await SDK.checkDraw(pulse, c, drawn, BUNDLE.public_key, { count: 1, min: 1, max: 5000 }))[0]);
+  check("a ground-out tag does not",
+        !(await SDK.checkDraw(pulse, { ...c, tag: c.tag + "-v138" }, drawn, BUNDLE.public_key,
+                              { count: 1, min: 1, max: 5000 }))[0]);
+  check("a back-dated receipt does not",
+        !(await SDK.checkCommitment({ ...c, created_after_round: c.target_round },
+                                    BUNDLE.public_key))[0]);
+
+  /* The two SDKs and the two pages must agree byte for byte, or an honest pulse
+     verifies in one place and fails in another. */
+  const vectors = JSON.parse(readFileSync(join(ROOT, "tests", "data", "canonical_vectors.json"), "utf8"));
+  let drifted = 0;
+  for (const v of vectors) {
+    let got;
+    try { got = V.cenc(v.value, "$"); } catch (e) { got = "ERROR"; }
+    if (got !== v.encoded) drifted++;
+  }
+  check("all JS encoders agree with the Python vectors", drifted === 0);
 }
 
 console.log(failures ? `\n${failures} FAILED\n` : "\nall checks passed\n");

@@ -163,7 +163,7 @@ class TestBrowserVerifier:
         The harness is a separate script because the code under test is JavaScript;
         it is invoked here so a Python-only test run still covers it.
         """
-        node = subprocess.run(["node", str(ROOT / "scripts" / "check_site_verifier.mjs")],
+        node = subprocess.run(["node", str(ROOT / "scripts" / "check_js_verifiers.mjs")],
                               capture_output=True, text=True, cwd=ROOT)
         assert node.returncode == 0, node.stdout + node.stderr
 
