@@ -115,6 +115,7 @@
   .checks li:last-child{border-bottom:0}
   .checks .mk{font-size:13px; width:14px; flex:none; color:var(--ink-3)}
   .checks li.ok .mk{color:var(--ok)} .checks li.bad .mk{color:var(--alert)}
+  .checks li.unknown .mk{color:var(--muted)} .checks li.unknown .why{color:var(--muted)}
   .checks .nm{font-weight:600; width:104px; flex:none}
   .checks .why{color:var(--ink-3); min-width:0}
   .checks li.bad .why{color:var(--alert)}
@@ -131,7 +132,7 @@
   td.h{color:var(--ink-3)}
   .st{font-family:Archivo,sans-serif; font-size:10px; font-weight:700; letter-spacing:.09em;
       text-transform:uppercase; color:var(--ink-3)}
-  .st.ok{color:var(--ok)} .st.bad{color:var(--alert)}
+  .st.ok{color:var(--ok)} .st.bad{color:var(--alert)} .st.unknown{color:var(--muted)}
 
   .fine{font-size:12.5px; color:var(--ink-3); margin:12px 0 0; max-width:58ch}
   .lede{font-size:13.5px; color:var(--ink-2); margin:0 0 14px; max-width:58ch}
@@ -288,22 +289,126 @@ const u32 = (n) => new Uint8Array([(n >>> 24) & 255, (n >>> 16) & 255, (n >>> 8)
 const sha512 = async (b) => new Uint8Array(await crypto.subtle.digest("SHA-512", b));
 
 /* ---------- canonical bytes ----------
-   Sorted keys, no whitespace, and timestamp_ms as an integer: a float would
-   serialise as 1787150090.0 in Python and 1787150090 here, and the two verifiers
-   would silently disagree. */
-function stable(v) {
-  if (v === null || typeof v !== "object") return JSON.stringify(v);
-  if (Array.isArray(v)) return "[" + v.map(stable).join(",") + "]";
-  return "{" + Object.keys(v).sort()
-    .map((k) => JSON.stringify(k) + ":" + stable(v[k])).join(",") + "}";
+   The exact bytes the server hashed and signed, reimplemented from the spec.
+
+   This used to be JSON.stringify with sorted keys, which is not the same function
+   Python's json.dumps is. A pulse whose provenance carried a whole-second float
+   serialised as 1787300619.0 there and 1787300619 here; 1e-8 became 1e-08 there and
+   1e-8 here; and Python escapes non-ASCII where JSON.stringify emits it raw. Each of
+   those is an honest pulse that one verifier calls valid and the other calls forged.
+
+   So the encoding is an explicit subset -- objects, arrays, strings, integers below
+   2^53, booleans, null; ASCII keys sorted bytewise; every character outside printable
+   ASCII escaped per UTF-16 code unit -- and anything outside it is rejected rather
+   than guessed at. */
+const SHORT_ESC = { '"': '\\"', "\\": "\\\\", "\n": "\\n", "\r": "\\r",
+                    "\t": "\\t", "\b": "\\b", "\f": "\\f" };
+function cstr(s) {
+  let o = '"';
+  for (let i = 0; i < s.length; i++) {          /* per UTF-16 code unit, as Python does */
+    const ch = s[i], c = s.charCodeAt(i);
+    if (SHORT_ESC[ch] !== undefined) o += SHORT_ESC[ch];
+    else if (c >= 0x20 && c <= 0x7e) o += ch;
+    else o += "\\u" + c.toString(16).padStart(4, "0");
+  }
+  return o + '"';
 }
-const canonical = (p) => enc.encode(stable({
+function cenc(v, path) {
+  if (v === null) return "null";
+  if (v === true) return "true";
+  if (v === false) return "false";
+  if (typeof v === "number") {
+    if (!Number.isInteger(v)) throw new Error(path + ": " + v + " is not an integer");
+    if (!Number.isSafeInteger(v)) throw new Error(path + ": " + v + " exceeds 2^53");
+    return String(v);
+  }
+  if (typeof v === "string") return cstr(v);
+  if (Array.isArray(v)) return "[" + v.map((x, i) => cenc(x, path + "[" + i + "]")).join(",") + "]";
+  if (typeof v === "object") {
+    return "{" + Object.keys(v).sort().map((k) => {
+      if (!/^[\x00-\x7f]*$/.test(k)) throw new Error(path + ": key " + k + " is not ASCII");
+      return cstr(k) + ":" + cenc(v[k], path + "." + k);
+    }).join(",") + "}";
+  }
+  throw new Error(path + ": " + typeof v + " is not encodable");
+}
+const canonical = (p) => enc.encode(cenc({
   local_value: p.local_value, period_seconds: p.period_seconds, prev_output: p.prev_output,
-  public_key: p.public_key ?? null, provenance: p.provenance, round: p.round,
+  public_key: p.public_key ?? null, provenance: p.provenance ?? {}, round: p.round,
   timestamp_ms: p.timestamp_ms, version: p.version,
-}));
+}, "$"));
 const recompute = async (p) =>
   hex(await sha512(cat(enc.encode(p.version), enc.encode("|"), canonical(p))));
+
+/* ---------- structure ----------
+   Everything the signature check would otherwise have to survive. A verifier that
+   lets malformed input reach the crypto has to interpret a thrown exception, and
+   "the key would not parse" is indistinguishable from "no Ed25519 here" is
+   indistinguishable from "forged". So the crypto only ever sees well-formed input,
+   and a throw downstream can be treated as what it is: a failure. */
+const VERSION = "beamline/pulse/v3";
+const RETIRED = {
+  "beamline/pulse/v1": "superseded before public release",
+  "beamline/pulse/v2": "signed a non-canonical body, so two verifiers could disagree",
+};
+const HEXLEN = { prev_output: 128, local_value: 128, output: 128, public_key: 64, signature: 128 };
+const GENESIS = "0".repeat(128);
+
+function structureError(p) {
+  if (!p || typeof p !== "object") return "pulse is not an object";
+  if (RETIRED[p.version]) return "pulse version " + p.version + " is retired: " + RETIRED[p.version];
+  if (p.version !== VERSION) return "unexpected pulse version " + p.version;
+  for (const f of ["round", "timestamp_ms", "period_seconds"]) {
+    if (!Number.isSafeInteger(p[f])) return f + " must be an integer";
+  }
+  if (p.round < 1) return "round must be at least 1";
+  if (p.period_seconds < 1) return "period_seconds must be at least 1";
+  if (p.timestamp_ms < 0) return "timestamp_ms must not be negative";
+  for (const f of ["prev_output", "local_value", "output"]) {
+    if (typeof p[f] !== "string" || !new RegExp("^[0-9a-f]{" + HEXLEN[f] + "}$").test(p[f]))
+      return f + " must be " + HEXLEN[f] + " lowercase hex characters";
+  }
+  for (const f of ["public_key", "signature"]) {
+    if (p[f] !== null && p[f] !== undefined &&
+        (typeof p[f] !== "string" || !new RegExp("^[0-9a-f]{" + HEXLEN[f] + "}$").test(p[f])))
+      return f + " must be " + HEXLEN[f] + " lowercase hex characters";
+  }
+  if (p.provenance !== undefined && (typeof p.provenance !== "object" || Array.isArray(p.provenance)))
+    return "provenance must be an object";
+  try { canonical(p); } catch (e) { return "body is not canonically encodable: " + e.message; }
+  if (p.round === 1 && p.prev_output !== GENESIS) return "round 1 does not start from genesis";
+  return null;
+}
+
+/* Is Ed25519 available at all? Answered once, up front, so "this browser cannot
+   check signatures" is a state the page can report honestly instead of something
+   inferred from an exception thrown halfway through a verification. */
+let ED25519 = null;
+async function haveEd25519() {
+  if (ED25519 === null) {
+    try {
+      await crypto.subtle.importKey("raw", hexToBytes(PUBKEY), { name: "Ed25519" }, false, ["verify"]);
+      ED25519 = true;
+    } catch (e) { ED25519 = false; }
+  }
+  return ED25519;
+}
+
+/* Returns "ok" | "bad" | "unavailable". Never throws, and "unavailable" is not a
+   pass -- the previous version caught its own exception and reported success, so a
+   pulse with an unparseable public key came back verified on a browser with working
+   Ed25519. That is a forged chain showing all green ticks. */
+async function signatureState(p) {
+  if (!p.signature || !p.public_key) return "bad";
+  if (p.public_key !== PUBKEY) return "bad";
+  if (!(await haveEd25519())) return "unavailable";
+  try {
+    const key = await crypto.subtle.importKey("raw", hexToBytes(p.public_key),
+      { name: "Ed25519" }, false, ["verify"]);
+    return (await crypto.subtle.verify("Ed25519", key, hexToBytes(p.signature), canonical(p)))
+      ? "ok" : "bad";
+  } catch (e) { return "bad"; }
+}
 
 /* ---------- derivation ---------- */
 class Stream {
@@ -416,43 +521,34 @@ async function runChecks(silent) {
   const out = [];
   const prev = working.find((x) => x.round === current.round - 1);
 
-  const rec = await recompute(current);
-  out.push(rec === current.output
+  const structural = structureError(current);
+  out.push(structural
+    ? { nm: "Contents", ok: false, why: structural }
+    : (await recompute(current)) === current.output
     ? { nm: "Contents", ok: true, why: "the pulse hashes to its own output" }
     : { nm: "Contents", ok: false, why: "edited — the output no longer matches" });
 
   out.push(!prev
     ? { nm: "Position", ok: true, why: "first pulse loaded; nothing to link to" }
     : current.prev_output === prev.output && current.round === prev.round + 1
+      && current.timestamp_ms > prev.timestamp_ms
     ? { nm: "Position", ok: true, why: `follows round ${prev.round}` }
     : { nm: "Position", ok: false, why: `does not follow round ${prev.round}` });
 
-  try {
-    const key = await crypto.subtle.importKey("raw", hexToBytes(current.public_key),
-      { name: "Ed25519" }, false, ["verify"]);
-    const good = current.signature && current.signature.length === 128 &&
-      await crypto.subtle.verify("Ed25519", key, hexToBytes(current.signature), canonical(current));
-    out.push(good && current.public_key === PUBKEY
-      ? { nm: "Signature", ok: true, why: "signed by Beamline" }
-      : good
-      ? { nm: "Signature", ok: false, why: "signed by a key Beamline never published" }
-      : { nm: "Signature", ok: false, why: "not signed by Beamline in this form" });
-  } catch (e) {
-    out.push({ nm: "Signature", ok: true, why: "this browser cannot check Ed25519" });
-  }
-
-  if (!lastDraw) {
-    out.push({ nm: "Winners", ok: true, why: "no draw run yet" });
-  } else {
-    const now = await drawFrom(current.output, lastDraw.tag, lastDraw.count, lastDraw.entrants);
-    const same = JSON.stringify(now) === JSON.stringify(lastDraw.winners);
-    out.push(same
-      ? { nm: "Winners", ok: true, why: `reproduce exactly: ${now.join(", ")}` }
-      : { nm: "Winners", ok: false, why: `changed to ${now.join(", ")}` });
-  }
+  /* "Cannot check" is not "checks out". A browser without Ed25519 gets an honest
+     unknown, and an unknown does not earn a tick. */
+  const sig = structural ? "bad" : await signatureState(current);
+  out.push(sig === "ok"
+    ? { nm: "Signature", ok: true, why: "signed by Beamline" }
+    : sig === "unavailable"
+    ? { nm: "Signature", ok: false, unknown: true,
+        why: "this browser has no Ed25519, so nothing here is attributable — "
+             + "check it with the Python SDK instead" }
+    : { nm: "Signature", ok: false, why: "not signed by Beamline in this form" });
 
   $("checks").innerHTML = out.map((c) =>
-    `<li class="${c.ok ? "ok" : "bad"}"><span class="mk">${c.ok ? "✓" : "✕"}</span>
+    `<li class="${c.ok ? "ok" : c.unknown ? "unknown" : "bad"}"><span class="mk">${
+       c.ok ? "✓" : c.unknown ? "?" : "✕"}</span>
      <span class="nm">${c.nm}</span><span class="why">${c.why}</span></li>`).join("");
   if (!silent) fill();
   return out;
@@ -482,17 +578,20 @@ function paintChain() {
 }
 
 async function checkOne(p, prev) {
+  const structural = structureError(p);
+  if (structural) return { state: "bad", label: "malformed" };
   if ((await recompute(p)) !== p.output) return { state: "bad", label: "rewritten" };
   if (prev && (p.prev_output !== prev.output || p.round !== prev.round + 1)) {
     return { state: "bad", label: "broken link" };
   }
-  try {
-    const key = await crypto.subtle.importKey("raw", hexToBytes(p.public_key),
-      { name: "Ed25519" }, false, ["verify"]);
-    const good = p.signature && p.signature.length === 128 &&
-      await crypto.subtle.verify("Ed25519", key, hexToBytes(p.signature), canonical(p));
-    if (!good) return { state: "bad", label: "bad signature" };
-  } catch (e) { return { state: "ok", label: "verified" }; }
+  if (prev && p.timestamp_ms <= prev.timestamp_ms) {
+    /* An archive built after the fact gets this wrong: rounds written in whatever
+       order the forger produced them, rather than in the order they happened. */
+    return { state: "bad", label: "out of order" };
+  }
+  const sig = await signatureState(p);
+  if (sig === "unavailable") return { state: "unknown", label: "no Ed25519 here" };
+  if (sig !== "ok") return { state: "bad", label: "bad signature" };
   return { state: "ok", label: "verified" };
 }
 
@@ -500,17 +599,24 @@ async function checkChain() {
   $("c-go").disabled = true;
   status = {};
   const ordered = [...working].sort((a, b) => a.round - b.round);
-  const bad = [];
+  const bad = [], unknown = [];
   for (let i = 0; i < ordered.length; i++) {
     const r = await checkOne(ordered[i], i ? ordered[i - 1] : null);
     status[ordered[i].round] = r;
     if (r.state === "bad") bad.push({ round: ordered[i].round, why: r.label });
+    if (r.state === "unknown") unknown.push(ordered[i].round);
     paintChain();
   }
   const onlySigs = bad.length && bad.every((b) => b.why === "bad signature");
-  $("c-badge").className = "badge " + (bad.length ? "bad" : "ok");
-  $("c-badge").textContent = bad.length ? `${bad.length} broken` : "All ten verified";
-  $("c-text").textContent = !bad.length
+  /* Unverified is its own answer. Reporting it as success is how a forged chain
+     gets a green badge, and reporting it as failure would libel an honest one. */
+  $("c-badge").className = "badge " + (bad.length ? "bad" : unknown.length ? "" : "ok");
+  $("c-badge").textContent = bad.length ? `${bad.length} broken`
+    : unknown.length ? "Cannot check here" : `All ${ordered.length} verified`;
+  $("c-text").textContent = !bad.length && unknown.length
+    ? "The hashes and links all check out, but this browser has no Ed25519, so none "
+      + "of it can be attributed to Beamline. Verify with the Python SDK."
+    : !bad.length
     ? "Every pulse hashes its contents, links to the one before, and is signed by Beamline."
     : onlySigs
     ? "The history fits together again — and none of the rewritten pulses is signed any more."
