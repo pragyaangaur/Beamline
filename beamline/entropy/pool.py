@@ -93,7 +93,10 @@ class EntropyPool:
                 self._credited_bits += len(data) * CREDIT_BITS_PER_BYTE[source]
 
         self.last_sample[source] = {
-            "at": time.time(),
+            # Integer milliseconds, never a float: this dict is published inside the
+            # signed beacon body, and a float has no cross-language spelling. See
+            # beamline/entropy/canonical.py.
+            "at_ms": int(time.time() * 1000),
             "bytes": len(data),
             "digest": hashlib.sha256(data).hexdigest(),
             **(meta or {}),

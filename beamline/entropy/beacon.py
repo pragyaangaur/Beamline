@@ -37,10 +37,11 @@ model as the NIST Randomness Beacon, and it should be described to customers tha
 from __future__ import annotations
 
 import hashlib
-import json
 import threading
 import time
 from dataclasses import asdict, dataclass, field
+
+from .canonical import NotCanonical, encode, sanitize
 
 try:  # optional -- the beacon still chains correctly unsigned
     from cryptography.hazmat.primitives.asymmetric.ed25519 import (
@@ -53,7 +54,16 @@ except Exception:  # pragma: no cover - depends on install extras
     HAVE_ED25519 = False
 
 GENESIS = "00" * 64
-VERSION = "beamline/pulse/v2"
+VERSION = "beamline/pulse/v3"
+#: Versions this build will not verify, and why. Kept explicit so a verifier says
+#: "produced by a version with a known weakness" rather than "unknown version".
+RETIRED_VERSIONS = {
+    "beamline/pulse/v1": "superseded before public release",
+    "beamline/pulse/v2": (
+        "signed a non-canonical JSON body, so a Python and a JavaScript verifier "
+        "could disagree about whether a pulse was authentic"
+    ),
+}
 
 
 @dataclass
@@ -80,9 +90,9 @@ class Pulse:
     output: str = ""
     signature: str | None = None
 
-    def signing_bytes(self) -> bytes:
-        """Canonical serialisation. Sorted keys + separators so it is byte-reproducible."""
-        body = {
+    def body(self) -> dict:
+        """The fields covered by the output hash and the signature."""
+        return {
             "version": self.version,
             "round": self.round,
             "timestamp_ms": self.timestamp_ms,
@@ -92,10 +102,14 @@ class Pulse:
             "public_key": self.public_key,
             "provenance": self.provenance,
         }
-        return json.dumps(body, sort_keys=True, separators=(",", ":")).encode()
+
+    def signing_bytes(self) -> bytes:
+        """Canonical bytes. Raises `NotCanonical` rather than signing something a
+        verifier in another language might serialise differently."""
+        return encode(self.body())
 
     def compute_output(self) -> str:
-        return hashlib.sha512(VERSION.encode() + b"|" + self.signing_bytes()).hexdigest()
+        return hashlib.sha512(self.version.encode() + b"|" + self.signing_bytes()).hexdigest()
 
     def to_dict(self) -> dict:
         return asdict(self)
@@ -179,10 +193,14 @@ class Beacon:
             # published, so it must never be reused for anything a customer holds.
             local_value = self._pool.extract(64, require_ready=False)
 
-            provenance = {
+            # Source metadata is third-party data. Coerce it into the canonical
+            # subset here, so a feed that starts returning floats degrades its own
+            # provenance entry instead of producing a pulse that some verifiers
+            # accept and others reject.
+            provenance = sanitize({
                 name: {k: v for k, v in sample.items() if k != "raw"}
                 for name, sample in self._pool.last_sample.items()
-            }
+            })
 
             p = Pulse(
                 version=VERSION,
@@ -194,7 +212,13 @@ class Beacon:
                 public_key=self.public_key_hex,
                 provenance=provenance,
             )
-            p.output = p.compute_output()
+            try:
+                p.output = p.compute_output()
+            except NotCanonical as e:  # pragma: no cover - sanitize() should prevent this
+                raise RuntimeError(
+                    f"refusing to emit a pulse whose body is not canonically "
+                    f"encodable: {e}"
+                ) from e
             if self._signer is not None:
                 p.signature = self._signer.sign(p.signing_bytes()).hex()
 
