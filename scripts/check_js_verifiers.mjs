@@ -127,6 +127,33 @@ console.log("\nmalformed and retired pulses are refused before the crypto runs")
   }
 }
 
+/* A merge once deleted the commitment and winners rows from runChecks outright. Every
+   function below still passed its own tests -- the page simply stopped calling two of
+   them, and rendered three green ticks for a draw whose name was never announced.
+   Nothing that tests the verifier in isolation can see that, so the wiring is asserted
+   here: these rows must exist and the stamp must be gated on all of them. */
+console.log("\nthe page still asks every question it has a verifier for");
+{
+  const body = slice("async function runChecks(", "function tamper(");
+  for (const [what, needle] of [
+    ["contents", "recompute(current)"],
+    ["structure", "structureError(current)"],
+    ["signature", "signatureState(current)"],
+    ["commitment", "commitmentState(lastDraw.tag"],
+    ["winners", "drawFrom(current.output, lastDraw.tag"],
+  ]) {
+    check(`runChecks still checks ${what}`, body.includes(needle),
+          `no call to ${needle} in runChecks`);
+  }
+  for (const name of ["Contents", "Position", "Signature", "Announced first", "Winners"]) {
+    check(`the "${name}" row is still rendered`, body.includes(`nm: "${name}"`));
+  }
+  const draw = slice("async function runDraw(", "/* ================= CHECK");
+  check("the Verified stamp is gated on every row passing",
+        /\(await runChecks\(true\)\)\.every\(\(?c\)? => c\.ok\)/.test(draw),
+        "runDraw no longer requires all checks to pass");
+}
+
 console.log("\nthe commitment check refuses everything except the announced draw");
 {
   const c = BUNDLE.commitment;
