@@ -264,6 +264,73 @@ def verify_pulse(pulse: dict, prev_output: str | None = None,
     return True, "ok"
 
 
+#: How far a pulse's timestamp may sit from its scheduled slot before a strict
+#: verifier calls the chain back-dated. Wide enough for clock skew and a slow emit.
+MAX_TIMESTAMP_SKEW_MS = 5 * 60 * 1000
+
+
+def verify_chain(pulses: list[dict], public_key_hex: str | None = None, *,
+                 trusted_keys=None, allow_unsigned: bool = False,
+                 enforce_period: bool = False) -> tuple[bool, str]:
+    """Verify a consecutive run of pulses. Any break invalidates everything after it.
+
+    Beyond per-pulse verification this checks the properties that only exist across
+    pulses: rounds are consecutive with no hole, each links to the one before it, and
+    timestamps strictly increase. Non-increasing timestamps are the signature of an
+    archive assembled after the fact, where rounds were written in whatever order the
+    forger produced them.
+
+    `enforce_period=True` additionally requires each gap to match the declared period
+    within `MAX_TIMESTAMP_SKEW_MS`. It is off by default because a genuine chain can
+    contain honest gaps -- a restart, a deploy -- and a verifier should not call those
+    forgeries. Turn it on when auditing a run that is supposed to have been continuous.
+    """
+    if not pulses:
+        return False, "empty chain"
+
+    ordered = sorted(pulses, key=lambda p: p["round"])
+    seen_keys: list[str] = []
+    rotations: list[int] = []
+
+    for i, p in enumerate(ordered):
+        prev = ordered[i - 1] if i else None
+        ok, reason = verify_pulse(
+            p,
+            prev_output=prev["output"] if prev else None,
+            public_key_hex=public_key_hex,
+            trusted_keys=trusted_keys,
+            allow_unsigned=allow_unsigned,
+        )
+        if not ok:
+            return False, f"round {p['round']}: {reason}"
+        if prev is not None:
+            if p["round"] != prev["round"] + 1:
+                return False, (f"chain jumps from round {prev['round']} to {p['round']}; "
+                               f"a missing round hides whatever happened in it")
+            if p["timestamp_ms"] <= prev["timestamp_ms"]:
+                return False, (f"round {p['round']} is not later than round "
+                               f"{prev['round']}; the chain was not built in order")
+            if enforce_period:
+                gap = p["timestamp_ms"] - prev["timestamp_ms"]
+                want = prev["period_seconds"] * 1000
+                if abs(gap - want) > MAX_TIMESTAMP_SKEW_MS:
+                    return False, (f"round {p['round']} lands {gap}ms after round "
+                                   f"{prev['round']}, not the declared {want}ms")
+        key = p.get("public_key")
+        if seen_keys and key != seen_keys[-1]:
+            rotations.append(p["round"])
+        seen_keys.append(key)
+
+    msg = (f"verified {len(ordered)} pulses from round {ordered[0]['round']} "
+           f"to {ordered[-1]['round']}")
+    if rotations:
+        # Every key here was already checked against the trust anchor, so this is a
+        # rotation the verifier accepted -- but never a silent one, because an
+        # unannounced rotation is what an archive substitution looks like.
+        msg += f"; signing key changed at round(s) {rotations}"
+    return True, msg
+
+
 class Beacon:
     """Owns the pulse chain. `store` is a `beamline.db.Database`."""
 
