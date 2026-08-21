@@ -110,12 +110,35 @@ class TestBeacon:
             assert pulses[i]["round"] == pulses[i - 1]["round"] + 1
 
     def test_pulses_verify(self, beacon):
+        """An unsigned beacon: structure and chaining hold, attribution does not.
+
+        allow_unsigned is explicit here because that is now the only way to get an
+        answer about an unsigned pulse. Verification with no trust anchor used to
+        return True, which meant a fabricated chain verified.
+        """
         prev = None
         for _ in range(4):
             p = beacon.emit()
-            ok, reason = verify_pulse(p, prev_output=prev)
+            ok, reason = verify_pulse(p, prev_output=prev, allow_unsigned=True)
             assert ok, reason
+            assert "UNSIGNED" in reason
             prev = p["output"]
+
+    def test_an_unsigned_pulse_is_not_verified_by_default(self):
+        """The attack this closes: publish a fabricated chain, sign nothing.
+
+        Every pulse in it hashes to its own contents and links to the one before,
+        because the forger controls all of it. Without a key to check against there
+        is nothing to distinguish it from Beamline's, so a caller who names no key
+        gets a refusal rather than a pass.
+        """
+        pool = EntropyPool()
+        pool.add("local_os", os.urandom(256))
+        with tempfile.TemporaryDirectory() as d:
+            b = Beacon(Database(Path(d) / "f.db"), pool, 1)
+            forged = b.emit()
+        ok, reason = verify_pulse(forged)
+        assert not ok and "trust anchor" in reason
 
     def test_tampering_is_detected(self, beacon):
         beacon.emit()
@@ -123,12 +146,14 @@ class TestBeacon:
         for field in ("local_value", "prev_output"):
             bad = dict(p)
             bad[field] = "ff" * 64
-            assert not verify_pulse(bad)[0], f"tampering with {field} went undetected"
+            ok, reason = verify_pulse(bad, allow_unsigned=True)
+            assert not ok, f"tampering with {field} went undetected"
+            assert "output hash" in reason, reason
 
     def test_broken_chain_link_detected(self, beacon):
         beacon.emit()
         p2 = beacon.emit()
-        assert not verify_pulse(p2, prev_output="ab" * 64)[0]
+        assert not verify_pulse(p2, prev_output="ab" * 64, allow_unsigned=True)[0]
 
     def test_outputs_are_unique(self, beacon):
         assert len({beacon.emit()["output"] for _ in range(20)}) == 20
@@ -163,12 +188,30 @@ class TestBeacon:
         assert p["signature"]
         assert verify_pulse(p, public_key_hex=b.public_key_hex)[0]
 
-        # An unexpected key is a ROTATION, not a forgery: the signature is sound, it
-        # just chains to a different operator key. Distinguishing the two is the whole
-        # reason the signing key travels inside the signed body.
+        # A key the caller did not name is a FAILURE. This used to return True with a
+        # note calling it a rotation, which meant a chain signed by an attacker's own
+        # key passed while the caller pinned the real one -- the note was in a string
+        # nobody reads and the boolean said yes.
         other = Ed25519PrivateKey.generate().public_key().public_bytes_raw().hex()
         ok, reason = verify_pulse(p, public_key_hex=other)
-        assert ok and "different key" in reason.lower()
+        assert not ok
+        assert "untrusted key" in reason
+
+    def test_a_real_rotation_is_accepted_only_when_named(self, db):
+        """Rotation is a decision the verifier makes, not one the pulse announces."""
+        pytest.importorskip("cryptography")
+        from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
+
+        pool = EntropyPool()
+        pool.add("local_os", os.urandom(256))
+        old = Ed25519PrivateKey.generate().public_key().public_bytes_raw().hex()
+        sk = Ed25519PrivateKey.generate()
+        b = Beacon(db, pool, 1, sk.private_bytes_raw().hex())
+        p = b.emit()
+
+        assert not verify_pulse(p, public_key_hex=old)[0]
+        ok, reason = verify_pulse(p, trusted_keys=[old, b.public_key_hex])
+        assert ok, reason
 
     def test_timestamp_is_an_integer_in_the_signed_body(self, db):
         """Guards a cross-language canonicalisation bug.
@@ -214,7 +257,7 @@ class TestBeacon:
             provenance=p["provenance"],
         )
         p["output"] = rebuilt.compute_output()
-        assert verify_pulse(p)[0]
+        assert verify_pulse(p, allow_unsigned=True)[0]
 
     def test_declared_key_cannot_be_swapped(self, db):
         """Substituting the declared key must break the output hash."""
@@ -229,7 +272,9 @@ class TestBeacon:
 
         forged = dict(p)
         forged["public_key"] = Ed25519PrivateKey.generate().public_key().public_bytes_raw().hex()
-        ok, reason = verify_pulse(forged)
+        ok, reason = verify_pulse(forged, public_key_hex=b.public_key_hex)
+        # The declared key is inside the signed body, so swapping it breaks the output
+        # hash before the signature check is even reached.
         assert not ok and "output hash" in reason
 
     def test_rotation_is_reported_by_the_chain_verifier(self, db):
@@ -250,7 +295,11 @@ class TestBeacon:
         b2 = Beacon(db, pool, 1, k2)          # operator rotates
         pulses.append(b2.emit())
 
-        ok, msg = v.check_chain(pulses)
+        # Naming only the old key rejects the chain: an unannounced rotation is
+        # indistinguishable from someone substituting their own archive.
+        assert not v.check_chain(pulses, b1.public_key_hex)[0]
+
+        ok, msg = v.check_chain(pulses, trusted_keys=[b1.public_key_hex, b2.public_key_hex])
         assert ok, msg
         assert "signing key changed at round(s) [3]" in msg
 
@@ -326,8 +375,8 @@ class TestVerifierAgreesWithServer:
         pool.add("local_os", os.urandom(256))
         beacon = Beacon(db, pool, 1)
         pulses = [beacon.emit() for _ in range(6)]
-        assert v.check_chain(pulses)[0]
+        assert v.check_chain(pulses, allow_unsigned=True)[0]
 
         pulses[3]["local_value"] = "00" * 64
-        ok, reason = v.check_chain(pulses)
+        ok, reason = v.check_chain(pulses, allow_unsigned=True)
         assert not ok and "round 4" in reason

@@ -59,16 +59,34 @@ async def about():
             "Beamline when you need randomness that is PUBLICLY VERIFIABLE.",
             "We are not FIPS 140-3 validated and are not a certified RNG for regulated "
             "gaming without an independent audit.",
+            "We do not claim that a draw derived from a pulse is fair merely because it "
+            "reproduces. Given an already-published pulse, a draw runner can try tag "
+            "spellings until one names the winner they want, or keep the tag and choose "
+            "which pulse to call the draw; both produce results that reproduce exactly "
+            "and carry a valid signature. Only a commitment made before the deciding "
+            "round rules that out -- see /v1/beacon/commit.",
         ],
         "best_uses": [
-            "Provably-fair draws, raffles, lotteries, and giveaways (see /v1/beacon/derive).",
+            "Provably-fair draws, raffles, lotteries, and giveaways "
+            "(commit at /v1/beacon/commit, then derive at /v1/beacon/derive).",
             "Audit and compliance sampling that must be shown to be unbiased after the fact.",
             "Public randomness for research, games, and simulation where reproducibility "
             "and third-party verification matter.",
         ],
         "beacon_trust_model": (
-            "Pulses are hash-chained and Ed25519-signed. This proves ordering and "
-            "tamper-evidence. It does not by itself prove the operator never withheld "
-            "a pulse. Same model as the NIST Randomness Beacon."
+            "Pulses are hash-chained and Ed25519-signed, which proves ordering and "
+            "tamper-evidence. Commitment receipts prove a draw was named before the "
+            "pulse that decided it existed, which is the part the chain cannot show. "
+            "Neither proves the operator never withheld a pulse it disliked and "
+            "re-rolled: that is visible to observers watching live and to nobody else, "
+            "and it is the same residual trust the NIST Randomness Beacon carries. "
+            "Anchoring pulses into an external append-only log would close it and is "
+            "not built."
+        ),
+        "verification_requires_a_trust_anchor": (
+            "Verify against a signing key recorded out of band. A verifier that fetches "
+            "the key from this server checks only that this server agrees with itself, "
+            "and one that supplies no key at all cannot distinguish our chain from a "
+            "fabricated one. Both SDKs refuse to answer without one."
         ),
     }

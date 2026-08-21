@@ -46,8 +46,9 @@ class QuotaExceeded(BeamlineError):
 class FairDraw:
     """A draw pinned to a published beacon pulse.
 
-    `verify()` recomputes the result locally from the pulse alone. It does not call
-    the server, so a passing check means the server could not have made the numbers up.
+    `verify()` does the whole check locally -- pulse signature, commitment, and the
+    numbers -- without calling the server, so a passing result means the server could
+    not have made any of it up.
     """
 
     data: Any
@@ -56,15 +57,55 @@ class FairDraw:
     pulse_output: str
     kind: str
     params: dict
+    pulse: dict | None = None
+    commitment: dict | None = None
+    public_key: str | None = None
 
-    def verify(self) -> bool:
+    @property
+    def committed(self) -> bool:
+        """Whether this draw was announced before its deciding pulse existed."""
+        return self.commitment is not None
+
+    def verify(self, public_key: str | None = None) -> bool:
+        """True only if this draw is fair, not merely reproducible.
+
+        Reproducing the numbers proves the server did not invent them. It says nothing
+        about whether the pulse is Beamline's, or whether the tag and round were picked
+        after the pulse was published -- and picking either afterwards is enough to
+        choose the winner outright. So this checks all of it, and returns False rather
+        than raising if any part is missing.
+        """
+        ok, _ = self.check(public_key)
+        return ok
+
+    def check(self, public_key: str | None = None) -> tuple[bool, str]:
+        """`verify()` with the reason attached, for when you need to explain a False."""
+        key = public_key or self.public_key
+        if self.pulse is None or self.commitment is None or not key:
+            # Fall back to reproducing the numbers, and say plainly that this is the
+            # weaker claim -- the caller should not read it as "the draw was fair".
+            recomputed = self._recompute()
+            if list(self.data) != list(recomputed):
+                return False, "result does not reproduce from the pulse output"
+            missing = ("commitment" if self.commitment is None else
+                       "pulse" if self.pulse is None else "signing key")
+            return False, (f"numbers reproduce, but with no {missing} this shows only "
+                           f"that the server did not invent them -- not that the draw "
+                           f"was named before the pulse existed")
+        return _v.check_draw(
+            self.pulse, self.commitment, self.data, key, kind=self.kind,
+            items=self.params.get("items"), count=self.params.get("count", 1),
+            minimum=self.params.get("min", 0), maximum=self.params.get("max", 100),
+        )
+
+    def _recompute(self):
         if self.kind == "integers":
-            return self.data == _v.reproduce_integers(
+            return _v.reproduce_integers(
                 self.pulse_output, self.tag, self.params["count"],
                 self.params["min"], self.params["max"],
             )
         if self.kind == "shuffle":
-            return self.data == _v.reproduce_shuffle(
+            return _v.reproduce_shuffle(
                 self.pulse_output, self.tag, self.params["items"]
             )
         raise NotImplementedError(f"no local verifier for kind={self.kind!r}")
@@ -168,28 +209,75 @@ class Beamline:
                                params={"start": start, "count": count})["pulses"]
         return _v.check_chain(pulses, self.public_key())
 
+    def commit(self, tag: str, target_round: int | None = None,
+               rounds_ahead: int = 1) -> dict:
+        """Announce a draw against a pulse that does not exist yet.
+
+        Publish the returned `commit_id` and `tag` immediately. That receipt is what
+        an entrant checks later to see the draw was named before the outcome existed.
+        """
+        body = {"tag": tag, "rounds_ahead": rounds_ahead}
+        if target_round is not None:
+            body["target_round"] = target_round
+        return self._request("POST", "/v1/beacon/commit", json=body)
+
+    def commitment(self, commit_id: str) -> dict:
+        return self._request("GET", f"/v1/beacon/commitment/{commit_id}")
+
     def fair_draw(self, tag: str, count: int = 1, min: int = 0, max: int = 100,
                   round: int | None = None, kind: str = "integers",
-                  items: list | None = None) -> FairDraw:
-        """Derive a draw from a published pulse.
+                  items: list | None = None, commit: bool = True,
+                  timeout: float = 300.0) -> FairDraw:
+        """Announce a draw, wait for its pulse, and derive the result.
 
-        Publish `tag` BEFORE the pulse you intend to use exists. That ordering is what
-        turns this from "a number the server gave me" into "a number neither of us
-        could have chosen". Call `wait_for_next_pulse()` first if you want that
-        guarantee automatically.
+        By default this commits first and then blocks until the committed round is
+        published, because the alternative -- deriving from a pulse that already
+        exists -- is not a fair draw at all. Given a published pulse, a runner can
+        search tag spellings until one names the winner they want (a hundred entrants
+        costs about a hundred tries, which is instant), or keep the tag and choose
+        which pulse to call the draw. Both produce results that verify perfectly.
+
+        `commit=False` skips the commitment and derives from an existing pulse. The
+        returned draw reports `committed == False` and `verify()` returns False for
+        it: the numbers will reproduce, but nothing shows they were not chosen.
         """
-        if round is None:
+        receipt = None
+        if commit:
+            if round is not None:
+                receipt = self.commit(tag, target_round=round)
+            else:
+                receipt = self.commit(tag)
+                round = receipt["target_round"]
+            self.wait_for_round(round, timeout=timeout)
+        elif round is None:
             round = self.latest_pulse()["round"]
+
         body = {"round": round, "tag": tag, "kind": kind, "count": count,
                 "min": min, "max": max}
         if items is not None:
             body["items"] = items
+        if receipt is not None:
+            body["commit_id"] = receipt["commit_id"]
         r = self._request("POST", "/v1/beacon/derive", json=body)
         return FairDraw(
             data=r["data"], round=r["round"], tag=r["tag"],
             pulse_output=r["pulse_output"], kind=kind,
             params={"count": count, "min": min, "max": max, "items": items},
+            pulse=self._request("GET", f"/v1/beacon/pulse/{r['round']}"),
+            commitment=r.get("commitment"),
+            public_key=self.public_key(),
         )
+
+    def wait_for_round(self, round_no: int, poll: float = 2.0,
+                       timeout: float = 300.0) -> dict:
+        """Block until `round_no` has been published."""
+        deadline = time.time() + timeout
+        while time.time() < deadline:
+            latest = self.latest_pulse()
+            if latest["round"] >= round_no:
+                return self._request("GET", f"/v1/beacon/pulse/{round_no}")
+            time.sleep(poll)
+        raise TimeoutError(f"round {round_no} was not published within {timeout}s")
 
     def wait_for_next_pulse(self, poll: float = 2.0, timeout: float = 300.0) -> dict:
         """Block until a pulse newer than the current one is published."""
