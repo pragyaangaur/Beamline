@@ -430,6 +430,32 @@ beamline selftest -n 200000
 
 ## Security notes
 
+### Threat model
+
+What an attacker can try, and what stops it. Each row has a test in
+[`tests/test_attacks.py`](tests/test_attacks.py) that performs the attack.
+
+| Attack | Stopped by |
+|---|---|
+| Predict a pulse before publication | Every extraction folds a fresh `os.urandom(64)` before hashing, so this needs the kernel CSPRNG *and* SHA-512 preimage resistance. Public inputs (NOAA, ANU) are credited zero secret entropy. |
+| Edit a published pulse | The output hash covers the whole body; the chain link propagates the break to every later pulse. |
+| Bias the numbers | Rejection sampling on every bounded draw. `rand() % 6` is not a fair die. |
+| Publish a wholly fabricated chain | Verification requires a trust anchor. An unsigned chain is refused, and so is an internally consistent one, because internal consistency is free to whoever wrote it. |
+| Sign a fabricated chain with your own key | An unrecognised signing key is a failure. A rotation is accepted only when the verifier names both keys. |
+| Splice attacker-signed rounds onto a real chain | Same check, applied per pulse, so the splice point fails and everything after it is unverified. |
+| Crash the verifier instead of defeating it | Structural validation runs before any cryptography, and every "could not check" path — unparseable key, missing Ed25519 — is a failure with a reason, never a pass. |
+| Make two verifiers disagree about one pulse | The canonical encoding is a specified subset that refuses anything it cannot spell one way, pinned across languages by shared test vectors. |
+| Rig the draw by grinding the tag or the round | The signed commitment: it names the exact tag and round, and records where the chain stood when it was issued. |
+| Announce a draw after seeing its pulse | The server refuses to commit to an emitted round; the verifier refuses a receipt whose `target_round` is not above its `created_after_round`. |
+
+**Not defended: the operator withholding a pulse and re-rolling.** Beamline could emit a
+pulse, dislike it, and publish the next one instead. The provenance gives a lower bound on
+when a pulse was produced — the NOAA readings it consumed did not exist earlier — but no
+upper bound, so this is visible to observers watching live and to nobody else. Anchoring
+each pulse into an external append-only log is the fix, and it is not built. Every claim
+here is about what a *draw runner* can do; the residual trust in the operator is the same
+one the NIST Randomness Beacon carries, and it should be described to customers that way.
+
 **The beacon signing key is the critical secret.** If it leaks, every pulse ever signed
 becomes deniable. It belongs in a KMS or HSM, not an environment variable.
 
@@ -441,3 +467,12 @@ material behind past pulses.
 **Rate limiting is per-process.** Behind a load balancer the effective ceiling is N times the
 configured rate; the monthly byte quota in SQLite is the hard limit, and Redis-backed
 limiting is the fix for multi-instance deployments.
+
+**The service refuses to start without a signing key.** Unsigned pulses are chained but
+cannot be attributed to anyone, so a chain an attacker generated this morning is
+indistinguishable from Beamline's — while the API looks identical. This used to be a
+startup warning, which reaches neither the API client nor the entrant the beacon exists for.
+`BEAMLINE_ALLOW_UNSIGNED_BEACON=1` opts in for local development.
+
+**Pin the public key out of band.** A verifier that fetches the signing key from the same
+server as the pulses is checking only that the server agrees with itself.
