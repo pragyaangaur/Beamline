@@ -72,11 +72,24 @@ class BeamlineService:
         self._last_reseed = time.monotonic()
 
         signing_key = os.environ.get("BEAMLINE_BEACON_KEY", "")
+        if not signing_key and not CONFIG.allow_unsigned_beacon:
+            # This used to be a log line. A warning at startup is invisible to every
+            # API client and to the entrant who is the whole reason the beacon exists,
+            # and an unsigned deployment serves confident-looking pulses that cannot be
+            # attributed to anybody. Refusing to start is the only version of this
+            # message that reaches the person it needs to reach.
+            raise RuntimeError(
+                "BEAMLINE_BEACON_KEY is not set. Unsigned pulses are hash-chained but "
+                "cannot be attributed to Beamline, so nobody can tell your chain from "
+                "one an attacker generated this morning. Generate a key with "
+                "`beamline beacon-key`, or set BEAMLINE_ALLOW_UNSIGNED_BEACON=1 if this "
+                "is a development run nobody will rely on."
+            )
         self.beacon = Beacon(self.db, self.pool, CONFIG.beacon_period_seconds, signing_key or None)
         if not signing_key:
             log.warning(
-                "beacon signing key unset -- pulses will be chained but UNSIGNED. "
-                "Set BEAMLINE_BEACON_KEY (see `beamline beacon-key`) before selling verifiability."
+                "running with BEAMLINE_ALLOW_UNSIGNED_BEACON: pulses are chained but "
+                "UNSIGNED and verification will report them as unattributed."
             )
 
         for src in self.sources:

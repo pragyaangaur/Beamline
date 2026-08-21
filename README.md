@@ -117,35 +117,58 @@ Interactive API docs are served at `/docs`.
 
 ## Running a fair draw
 
-1. **Publish the draw name first** — a draw id, an entry-list hash, an order number.
-2. **Wait for the next pulse.** It does not exist yet, so neither side can choose it.
+1. **Register the draw name** against a round that has not happened yet. Beamline returns
+   a signed receipt recording where the chain stood when you registered.
+2. **Wait for that pulse.** It does not exist yet, so neither side can choose it.
 3. **Derive the result** from that pulse.
-4. **Anyone can now recompute it** from the published pulse alone.
+4. **Anyone can now recompute it** and check the receipt predates the pulse.
 
 ```python
 from beamline_client import Beamline
 
 bl = Beamline(api_key="bl_live_...", base_url="http://127.0.0.1:8080")
 
-bl.wait_for_next_pulse()                                  # step 2
-draw = bl.fair_draw("raffle-2026-08-19", count=3, min=1, max=5000)
+draw = bl.fair_draw("raffle-2026-08-19", count=3, min=1, max=5000)   # steps 1-3
 
-print(draw.data, draw.round)
-assert draw.verify()                                      # recomputed locally
+print(draw.data, draw.round, draw.committed)
+assert draw.verify()                                      # checked locally, end to end
 print(bl.verify_chain())                                  # (True, 'verified N pulses')
 ```
 
-`draw.verify()` makes zero server calls. It recomputes the numbers using
-[`sdk/python/beamline_client/verify.py`](sdk/python/beamline_client/verify.py), which shares
-no code with the server and reimplements the spec from scratch — a verifier that imports the
-server's own functions only proves the server agrees with itself. A JavaScript verifier
-([`sdk/js/index.js`](sdk/js/index.js)) does the same in the browser via WebCrypto.
+`draw.verify()` makes zero server calls and answers the whole question, not part of it:
+the pulse is signed by the key you named, the receipt is signed and was issued before that
+pulse existed, the receipt names *this* tag and *this* round, and the numbers reproduce. It
+uses [`sdk/python/beamline_client/verify.py`](sdk/python/beamline_client/verify.py), which
+shares no code with the server and reimplements the spec from scratch — a verifier that
+imports the server's own functions only proves the server agrees with itself. A JavaScript
+verifier ([`sdk/js/index.js`](sdk/js/index.js)) does the same in the browser via WebCrypto.
+
+### Why step 1 is not optional
+
+Reproducible is not the same as fair, and this is the difference. Given a pulse that has
+already been published, a draw runner can:
+
+- **Grind the tag.** Try spellings — `Giveaway 7`, `giveaway-7`, `Giveaway 7 (v2)` — until
+  one names the winner they want. Against 100 entrants that takes about 100 tries, which is
+  a hundredth of a second.
+- **Grind the round.** Keep the tag honest and choose *which* pulse to call the draw.
+  Waiting an hour gives a 45% chance some pulse in it crowns their friend; four hours, 91%.
+
+Neither forges anything. Every such result reproduces exactly, carries a valid signature,
+and passes any check that only asks "do these numbers follow from this pulse?" The receipt
+is what rules them out: the tag and the round are inside it, signed, alongside the round the
+chain had reached when it was issued.
+
+`bl.fair_draw(...)` commits by default. `commit=False` gives you a reproducible number
+without the fairness claim, `draw.committed` is `False`, and `draw.verify()` returns `False`
+— because in that mode there is nothing to verify beyond arithmetic.
 
 **What this proves, and what it doesn't.** The chain proves ordering and tamper-evidence.
-It does not by itself prove an operator never withheld a pulse they disliked and waited for
-the next one — that is caught by observers watching live, and by the space-weather
-provenance no longer lining up. It is the same trust model as the NIST Randomness Beacon.
-Publishing the draw name in advance closes the gap from your side.
+The receipt proves you named the draw before the outcome existed. Together they cover
+everything a draw runner could do. They do not prove *Beamline* never withheld a pulse it
+disliked and re-rolled — that is caught by observers watching live, and by the space-weather
+provenance no longer lining up, and it is the same residual trust the NIST Randomness Beacon
+carries. Anchoring pulses to an external log is what would close it, and it is not built.
 
 ## API reference
 
@@ -161,8 +184,10 @@ Publishing the draw name in advance closes the gap from your side.
 | `GET /v1/random/uuid` | key | RFC 4122 version 4 |
 | `GET /v1/random/dice` | key | dice rolls |
 | `GET /v1/random/password` | key | passwords with entropy, served `no-store` |
-| `POST /v1/beacon/derive` | key | reproducible draw from a pulse |
-| `GET /v1/beacon/latest`, `/pulse/{n}`, `/chain`, `/verify/{n}` | none | the beacon |
+| `POST /v1/beacon/commit` | key | announce a draw against a future round |
+| `POST /v1/beacon/derive` | key | reproducible draw from a pulse, bound to a commitment |
+| `GET /v1/beacon/latest`, `/pulse/{n}`, `/chain`, `/verify/{n}`, `/verify-chain` | none | the beacon |
+| `GET /v1/beacon/commitment/{id}`, `/commitments/{round}` | none | what was announced, and when |
 | `GET /v1/beacon/public-key` | none | Ed25519 verification key |
 | `GET /v1/me` | key | usage and limits |
 | `GET /v1/health`, `/v1/about` | none | source health, claims |
@@ -233,19 +258,41 @@ live state is at `GET /v1/health`.
 ### The pulse
 
 ```
-output = SHA-512("beamline/pulse/v2" | canonical_json(
+output = SHA-512("beamline/pulse/v3" | canonical_bytes(
              round, timestamp_ms, period, prev_output,
              local_value, public_key, provenance))
 ```
 
-Signed with Ed25519, chained through `prev_output`. Two details in that body exist because
-of failures found while testing the Python and JavaScript verifiers against each other.
-**`public_key` sits inside the signed body**, so rotating the signing key is an auditable
-event rather than a silent break — otherwise every historical pulse stops verifying and a
-verifier cannot tell an honest rotation from a substituted archive. **`timestamp_ms` is an
-integer**, because a float landing on a whole second serialises as `1787150090.0` in Python
-and `1787150090` in JavaScript, so the canonical bytes diverge and verification fails for
-about one pulse in a thousand, silently.
+Signed with Ed25519, chained through `prev_output`. Details in that body exist because of
+failures found while testing the Python and JavaScript verifiers against each other.
+
+**`public_key` sits inside the signed body**, so swapping it breaks the output hash, and
+rotating the signing key is an auditable event rather than a silent break.
+
+**`canonical_bytes` is a specified subset, not `json.dumps`** — see
+[`beamline/entropy/canonical.py`](beamline/entropy/canonical.py). No floats, integers below
+2⁵³, ASCII object keys sorted bytewise, everything else escaped per UTF-16 code unit.
+`timestamp_ms` was already an integer for this reason, but the provenance dict beside it was
+not, and it carries wall-clock times and strings copied from third-party feeds. A float
+landing on a whole second is `1787150090.0` in Python and `1787150090` in JavaScript;
+`1e-8` is `1e-08` in one and `1e-8` in the other; Python escapes non-ASCII and
+`JSON.stringify` does not. Each is an honest pulse that one verifier calls valid and another
+calls forged. The encoder now refuses to sign anything it cannot spell one way, and
+[`tests/data/canonical_vectors.json`](tests/data/canonical_vectors.json) pins the two
+implementations together on every test run.
+
+### The commitment
+
+```
+receipt = Ed25519_sign(canonical_bytes(
+              version, commit_id, tag, target_round,
+              created_at_ms, created_after_round, public_key))
+```
+
+`created_after_round` is the round the chain had reached when the receipt was issued, and
+the server refuses to issue one for a round already emitted. A verifier rejects any receipt
+whose `target_round` is not strictly above it — before checking the signature, because a
+perfectly signed receipt written after the deciding pulse proves nothing.
 
 ### The harvester
 
@@ -372,18 +419,61 @@ Populate it with `python scripts/harvest_anu.py --duration 600`.
 pytest -q
 ```
 
-247 tests cover DRBG correctness and backtracking resistance, pool credit policy, health-test
+298 tests cover DRBG correctness and backtracking resistance, pool credit policy, health-test
 failure detection, statistical bias in every generator (including a chi-square across all 24
 permutations of a 4-element shuffle), the alphabet and packing layer, store deduplication,
 harvester control-law behaviour, key handling, beacon chain integrity and tamper detection,
 signing-key rotation, HTTP auth, quotas and rate limits, the published demo page, and the
 NIST suites against known-bad generators.
 
+[`tests/test_attacks.py`](tests/test_attacks.py) is worth reading on its own. Every test in
+it reproduces an attack that once succeeded against the shipped verifiers — a fabricated
+chain, a chain signed with the attacker's own key, a browser verifier that reported success
+from inside its own catch block, a draw rigged by grinding the tag, an honest pulse the two
+verifiers disagreed about.
+
+```bash
+node scripts/check_js_verifiers.mjs
+```
+
+Attacks all three JavaScript verifiers — the demo page, the published draw record, and the
+JS SDK — by slicing them out of their real files rather than copying them, and checks every
+canonical encoder against
+[shared test vectors](tests/data/canonical_vectors.json). Two implementations of an encoding
+agree until they don't, and the way that surfaces is an honest pulse one verifier calls
+forged.
+
 ```bash
 beamline selftest -n 200000
 ```
 
 ## Security notes
+
+### Threat model
+
+What an attacker can try, and what stops it. Each row has a test in
+[`tests/test_attacks.py`](tests/test_attacks.py) that performs the attack.
+
+| Attack | Stopped by |
+|---|---|
+| Predict a pulse before publication | Every extraction folds a fresh `os.urandom(64)` before hashing, so this needs the kernel CSPRNG *and* SHA-512 preimage resistance. Public inputs (NOAA, ANU) are credited zero secret entropy. |
+| Edit a published pulse | The output hash covers the whole body; the chain link propagates the break to every later pulse. |
+| Bias the numbers | Rejection sampling on every bounded draw. `rand() % 6` is not a fair die. |
+| Publish a wholly fabricated chain | Verification requires a trust anchor. An unsigned chain is refused, and so is an internally consistent one, because internal consistency is free to whoever wrote it. |
+| Sign a fabricated chain with your own key | An unrecognised signing key is a failure. A rotation is accepted only when the verifier names both keys. |
+| Splice attacker-signed rounds onto a real chain | Same check, applied per pulse, so the splice point fails and everything after it is unverified. |
+| Crash the verifier instead of defeating it | Structural validation runs before any cryptography, and every "could not check" path — unparseable key, missing Ed25519 — is a failure with a reason, never a pass. |
+| Make two verifiers disagree about one pulse | The canonical encoding is a specified subset that refuses anything it cannot spell one way, pinned across languages by shared test vectors. |
+| Rig the draw by grinding the tag or the round | The signed commitment: it names the exact tag and round, and records where the chain stood when it was issued. |
+| Announce a draw after seeing its pulse | The server refuses to commit to an emitted round; the verifier refuses a receipt whose `target_round` is not above its `created_after_round`. |
+
+**Not defended: the operator withholding a pulse and re-rolling.** Beamline could emit a
+pulse, dislike it, and publish the next one instead. The provenance gives a lower bound on
+when a pulse was produced — the NOAA readings it consumed did not exist earlier — but no
+upper bound, so this is visible to observers watching live and to nobody else. Anchoring
+each pulse into an external append-only log is the fix, and it is not built. Every claim
+here is about what a *draw runner* can do; the residual trust in the operator is the same
+one the NIST Randomness Beacon carries, and it should be described to customers that way.
 
 **The beacon signing key is the critical secret.** If it leaks, every pulse ever signed
 becomes deniable. It belongs in a KMS or HSM, not an environment variable.
@@ -396,3 +486,12 @@ material behind past pulses.
 **Rate limiting is per-process.** Behind a load balancer the effective ceiling is N times the
 configured rate; the monthly byte quota in SQLite is the hard limit, and Redis-backed
 limiting is the fix for multi-instance deployments.
+
+**The service refuses to start without a signing key.** Unsigned pulses are chained but
+cannot be attributed to anyone, so a chain an attacker generated this morning is
+indistinguishable from Beamline's — while the API looks identical. This used to be a
+startup warning, which reaches neither the API client nor the entrant the beacon exists for.
+`BEAMLINE_ALLOW_UNSIGNED_BEACON=1` opts in for local development.
+
+**Pin the public key out of band.** A verifier that fetches the signing key from the same
+server as the pulses is checking only that the server agrees with itself.

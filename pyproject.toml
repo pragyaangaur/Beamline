@@ -8,6 +8,10 @@ dependencies = [
     "uvicorn[standard]>=0.30",
     "httpx>=0.27",
     "pydantic>=2.7",
+    # Ed25519. Not optional: a beacon whose pulses cannot be signed or verified is
+    # not a beacon, and an install that silently lacks it produces a service that
+    # looks identical and proves nothing.
+    "cryptography>=42",
 ]
 
 [project.optional-dependencies]

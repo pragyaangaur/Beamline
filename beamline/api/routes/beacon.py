@@ -11,7 +11,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
 
 from ... import generators as gen
-from ...entropy.beacon import verify_pulse
+from ...entropy.beacon import verify_chain, verify_commitment, verify_pulse
 from ...service import SERVICE
 from ..deps import Principal, bill, require_key
 
@@ -34,7 +34,10 @@ async def public_key():
         "signed": bool(SERVICE.beacon.public_key_hex),
         "note": "Unsigned pulses are still hash-chained and tamper-evident to anyone "
                 "who recorded an earlier pulse, but cannot be attributed to Beamline "
-                "by a third party.",
+                "by a third party, and verification treats them as unattributed.",
+        "pin_this_key": "Record this key out of band. A verifier that fetches the key "
+                        "from the same server as the pulses checks only that the "
+                        "server agrees with itself.",
     }
 
 
@@ -53,30 +56,152 @@ async def chain(start: int = Query(1, ge=1), count: int = Query(50, ge=1, le=500
 
 @router.get("/verify/{round_no}")
 async def verify(round_no: int):
-    """Server-side convenience check. The real verification is the client doing this itself."""
+    """Server-side convenience check. The real verification is the client doing this itself.
+
+    Note what this endpoint cannot do for you. It is the operator answering a question
+    about the operator's own chain: if the service were dishonest, so would this be.
+    It is here to catch transport corruption and to show what the checks look like --
+    not to substitute for running `beamline_client.verify` against a key you obtained
+    somewhere other than from us.
+    """
     p = SERVICE.beacon.get(round_no)
     if p is None:
         raise HTTPException(404, f"pulse {round_no} not found")
     prev = SERVICE.beacon.get(round_no - 1)
+    signed = bool(SERVICE.beacon.public_key_hex)
     ok, reason = verify_pulse(
         p,
         prev_output=prev["output"] if prev else None,
         public_key_hex=SERVICE.beacon.public_key_hex,
+        # An unsigned deployment cannot attribute anything. Earlier this fell through
+        # to "valid: true" because there was no key to check against, which reported a
+        # missing signature as a passing verification.
+        allow_unsigned=not signed,
     )
-    return {"round": round_no, "valid": ok, "reason": reason,
-            "chain_verified_against": round_no - 1 if prev else "genesis"}
+    return {
+        "round": round_no,
+        "valid": ok,
+        "reason": reason,
+        "attributable": ok and signed,
+        "chain_verified_against": round_no - 1 if prev else "genesis",
+        "checked_against_key": SERVICE.beacon.public_key_hex,
+        "note": ("This is the operator checking their own chain. Verify independently "
+                 "with the SDK against a key you did not fetch from this server."),
+    }
+
+
+@router.get("/verify-chain")
+async def verify_chain_route(start: int = Query(1, ge=1), count: int = Query(50, ge=1, le=500)):
+    """Verify a run of pulses end to end: links, ordering, and signatures together.
+
+    Per-pulse checks miss the things that only exist across pulses -- a hole where a
+    round was withheld, timestamps that do not increase -- and those are precisely
+    what an archive assembled after the fact gets wrong.
+    """
+    pulses = SERVICE.db.pulse_range(start, count)
+    if not pulses:
+        raise HTTPException(404, f"no pulses from round {start}")
+    signed = bool(SERVICE.beacon.public_key_hex)
+    ok, reason = verify_chain(pulses, SERVICE.beacon.public_key_hex,
+                              allow_unsigned=not signed)
+    return {"start": pulses[0]["round"], "end": pulses[-1]["round"],
+            "count": len(pulses), "valid": ok, "reason": reason,
+            "attributable": ok and signed}
+
+
+class CommitRequest(BaseModel):
+    """Announce a draw against a pulse that has not been emitted yet."""
+
+    tag: str = Field(..., min_length=1, max_length=256,
+                     description="The exact string that names this draw. It is signed "
+                                 "into the receipt, so it cannot be adjusted later.")
+    target_round: int | None = Field(
+        None, ge=1, description="Which future round decides the draw. Defaults to "
+                                "`rounds_ahead` past the latest emitted round.")
+    rounds_ahead: int = Field(1, ge=1, le=10_000,
+                              description="Used when target_round is not given.")
+
+
+@router.post("/commit", status_code=201)
+async def commit(req: CommitRequest, p: Principal = Depends(require_key)):
+    """Register a draw before the pulse that decides it exists.
+
+    Without this, "we announced the draw first" is the runner's word. The receipt
+    returned here is signed by Beamline and records the round the chain had reached
+    at the time, so an entrant can check the announcement predates the outcome
+    instead of taking it on trust.
+    """
+    try:
+        receipt = SERVICE.beacon.commit(
+            req.tag, req.target_round, rounds_ahead=req.rounds_ahead, key_id=p.key_id)
+    except ValueError as e:
+        raise HTTPException(409, str(e)) from e
+
+    bill(p, 32)
+    return {
+        **receipt,
+        "publish_this": (
+            "Post the commit_id and tag now, before round "
+            f"{receipt['target_round']} lands. Anyone can then fetch "
+            f"/v1/beacon/commitment/{receipt['commit_id']} and confirm the draw was "
+            "named while the chain still stood at round "
+            f"{receipt['created_after_round']}."
+        ),
+    }
+
+
+@router.get("/commitment/{commit_id}")
+async def commitment(commit_id: str):
+    """Public: anyone can check what was announced, and when."""
+    receipt = SERVICE.beacon.commitment(commit_id)
+    if receipt is None:
+        raise HTTPException(404, f"no commitment {commit_id!r}")
+    ok, reason = verify_commitment(
+        receipt, SERVICE.beacon.public_key_hex,
+        allow_unsigned=not SERVICE.beacon.public_key_hex)
+    pulse = SERVICE.beacon.get(receipt["target_round"])
+    return {
+        **receipt,
+        "valid": ok,
+        "reason": reason,
+        "target_round_emitted": pulse is not None,
+        "pulse_output": pulse["output"] if pulse else None,
+    }
+
+
+@router.get("/commitments/{round_no}")
+async def commitments_for_round(round_no: int):
+    """Every draw announced against one round.
+
+    Deliberately public and deliberately complete. A runner who announces twenty
+    draws against the same pulse and publishes only the flattering one is doing
+    something this endpoint makes visible.
+    """
+    receipts = SERVICE.db.commitments_for_round(round_no)
+    return {"round": round_no, "count": len(receipts), "commitments": receipts}
 
 
 class DeriveRequest(BaseModel):
     """A reproducible draw pinned to a published pulse.
 
-    `tag` is the caller's commitment string -- a draw id, an order number, anything
-    that names *this specific* draw. Publish the tag before the pulse round happens
-    and the result becomes something you can prove you did not choose.
+    `tag` names *this specific* draw -- a draw id, an order number, an entry-list
+    hash. Deriving from an already-published pulse is reproducible by anyone, but
+    reproducible is not the same as fair: a runner free to pick the tag after seeing
+    the pulse, or to pick which pulse to call the draw, controls the outcome while
+    every byte of cryptography stays honest.
+
+    Pass `commit_id` to close that gap. Without one the result is still correct and
+    still reproducible; it simply is not evidence of anything about timing, and the
+    response says so rather than leaving the reader to assume otherwise.
     """
 
     round: int = Field(..., ge=1)
     tag: str = Field(..., min_length=1, max_length=256)
+    commit_id: str | None = Field(
+        None, max_length=64,
+        description="The receipt from /v1/beacon/commit. Supply it and the response "
+                    "carries proof the draw was named before this round existed; "
+                    "omit it and the response says plainly that it does not.")
     kind: str = Field("integers", pattern="^(bytes|integers|shuffle|sample)$")
     count: int = Field(1, ge=1, le=gen.MAX_COUNT)
     min: int = 0
@@ -92,6 +217,28 @@ async def derive(req: DeriveRequest, p: Principal = Depends(require_key)):
             404, f"pulse {req.round} does not exist yet. Derivation only works against "
                  "already-published pulses -- that is what makes the result verifiable."
         )
+
+    commitment_rec = None
+    if req.commit_id:
+        commitment_rec = SERVICE.beacon.commitment(req.commit_id)
+        if commitment_rec is None:
+            raise HTTPException(404, f"no commitment {req.commit_id!r}")
+        # The tag and round are inside the signed receipt, so mismatches here are the
+        # server catching a runner trying to reuse one announcement for a different
+        # draw. A verifier would catch it too; failing early is friendlier.
+        if commitment_rec["tag"] != req.tag:
+            raise HTTPException(
+                409, f"commitment {req.commit_id} names tag {commitment_rec['tag']!r}, "
+                     f"not {req.tag!r}")
+        if commitment_rec["target_round"] != req.round:
+            raise HTTPException(
+                409, f"commitment {req.commit_id} names round "
+                     f"{commitment_rec['target_round']}, not {req.round}")
+        ok, why = verify_commitment(
+            commitment_rec, SERVICE.beacon.public_key_hex,
+            allow_unsigned=not SERVICE.beacon.public_key_hex)
+        if not ok:
+            raise HTTPException(409, f"commitment {req.commit_id} does not verify: {why}")
 
     # A deterministic byte stream from the pulse, so the client can recompute this
     # offline from the published pulse alone. Buffered because `bounded_int` pulls
@@ -132,6 +279,20 @@ async def derive(req: DeriveRequest, p: Principal = Depends(require_key)):
         "tag": req.tag,
         "pulse_output": pulse_rec["output"],
         "reproducible": True,
+        "committed": commitment_rec is not None,
+        "commitment": commitment_rec,
+        "provenance_note": (
+            f"Announced at round {commitment_rec['created_after_round']}, decided by "
+            f"round {req.round}. The deciding pulse did not exist when the draw was "
+            f"named, and the tag is inside the signed receipt, so neither could be "
+            f"chosen after the fact."
+            if commitment_rec else
+            "NOT COMMITTED. This result is reproducible by anyone, but nothing here "
+            "shows the draw was named before round "
+            f"{req.round} was published -- the tag and the round were both chosen "
+            "with the pulse already in hand. Use /v1/beacon/commit first if the "
+            "result needs to convince someone who assumes you cheated."
+        ),
         "how_to_verify": (
             "stream = concat over i>=1 of SHA512('beamline/derive/v1' | pulse_output_bytes "
             "| f'{tag}#{i}' | uint32be(j)) for j=0..63; then apply the same generator "

@@ -244,3 +244,122 @@ class TestMeta:
 
     def test_openapi_renders(self, client):
         assert client.get("/openapi.json").status_code == 200
+
+
+@pytest.fixture
+def signed_client(client):
+    """A client whose beacon has a signing key, as any real deployment must have.
+
+    The chain is restarted from empty so every round in it is signed. Leaving the
+    unsigned pulse the base fixture emitted would make round 1 unattributable and the
+    attribution assertions below would be testing the wrong thing.
+    """
+    ed = pytest.importorskip("cryptography.hazmat.primitives.asymmetric.ed25519")
+    sk = ed.Ed25519PrivateKey.generate()
+    with SERVICE.db._conn() as c:
+        c.execute("DELETE FROM pulses")
+    SERVICE.beacon = Beacon(SERVICE.db, SERVICE.pool, 60, sk.private_bytes_raw().hex())
+    SERVICE.beacon.emit()
+    return client
+
+
+class TestCommitmentEndpoints:
+    """The endpoints that turn 'we announced it first' from a claim into evidence."""
+
+    def test_commit_names_a_future_round(self, signed_client, key):
+        latest = signed_client.get("/v1/beacon/latest").json()["round"]
+        r = signed_client.post("/v1/beacon/commit", headers={"Authorization": f"Bearer {key}"},
+                               json={"tag": "giveaway-7"})
+        assert r.status_code == 201, r.text
+        receipt = r.json()
+        assert receipt["target_round"] > receipt["created_after_round"] == latest
+        assert receipt["signature"] and receipt["tag"] == "giveaway-7"
+
+    def test_commit_refuses_an_emitted_round(self, signed_client, key):
+        """Committing to the past is the whole attack, so it is refused at the source."""
+        latest = signed_client.get("/v1/beacon/latest").json()["round"]
+        r = signed_client.post("/v1/beacon/commit", headers={"Authorization": f"Bearer {key}"},
+                               json={"tag": "after-the-fact", "target_round": latest})
+        assert r.status_code == 409
+        assert "already been emitted" in r.json()["detail"]
+
+    def test_commitment_lookup_is_public(self, signed_client, key):
+        commit = signed_client.post(
+            "/v1/beacon/commit", headers={"Authorization": f"Bearer {key}"},
+            json={"tag": "public-check"}).json()
+        r = signed_client.get(f"/v1/beacon/commitment/{commit['commit_id']}")
+        assert r.status_code == 200, "an entrant with no account must be able to check this"
+        assert r.json()["valid"] is True
+        assert r.json()["target_round_emitted"] is False
+
+    def test_commitments_for_a_round_are_listed(self, signed_client, key):
+        """A runner announcing twenty draws against one pulse should be visible."""
+        headers = {"Authorization": f"Bearer {key}"}
+        target = signed_client.get("/v1/beacon/latest").json()["round"] + 1
+        for i in range(3):
+            signed_client.post("/v1/beacon/commit", headers=headers,
+                               json={"tag": f"variant-{i}", "target_round": target})
+        r = signed_client.get(f"/v1/beacon/commitments/{target}")
+        assert r.json()["count"] == 3
+        assert {c["tag"] for c in r.json()["commitments"]} == {"variant-0", "variant-1", "variant-2"}
+
+    def test_derive_with_a_commitment_reports_it(self, signed_client, key):
+        headers = {"Authorization": f"Bearer {key}"}
+        commit = signed_client.post("/v1/beacon/commit", headers=headers,
+                                    json={"tag": "bound-draw"}).json()
+        SERVICE.beacon.emit()
+        r = signed_client.post("/v1/beacon/derive", headers=headers, json={
+            "round": commit["target_round"], "tag": "bound-draw",
+            "commit_id": commit["commit_id"], "count": 1, "min": 1, "max": 100})
+        assert r.status_code == 200, r.text
+        assert r.json()["committed"] is True
+        assert "did not exist when the draw was named" in r.json()["provenance_note"]
+
+    def test_derive_refuses_a_commitment_for_another_tag(self, signed_client, key):
+        """Grinding, at the API boundary: the tag is inside the signed receipt."""
+        headers = {"Authorization": f"Bearer {key}"}
+        commit = signed_client.post("/v1/beacon/commit", headers=headers,
+                                    json={"tag": "giveaway-7"}).json()
+        SERVICE.beacon.emit()
+        r = signed_client.post("/v1/beacon/derive", headers=headers, json={
+            "round": commit["target_round"], "tag": "giveaway-7 (attempt 138)",
+            "commit_id": commit["commit_id"], "count": 1, "min": 1, "max": 100})
+        assert r.status_code == 409 and "not" in r.json()["detail"]
+
+    def test_derive_refuses_a_commitment_for_another_round(self, signed_client, key):
+        headers = {"Authorization": f"Bearer {key}"}
+        commit = signed_client.post("/v1/beacon/commit", headers=headers,
+                                    json={"tag": "giveaway-7"}).json()
+        SERVICE.beacon.emit()
+        later = SERVICE.beacon.emit()
+        r = signed_client.post("/v1/beacon/derive", headers=headers, json={
+            "round": later["round"], "tag": "giveaway-7",
+            "commit_id": commit["commit_id"], "count": 1, "min": 1, "max": 100})
+        assert r.status_code == 409
+
+    def test_uncommitted_derive_says_so(self, signed_client, key):
+        """It still works. It just stops implying something it cannot support."""
+        r = signed_client.post("/v1/beacon/derive", headers={"Authorization": f"Bearer {key}"},
+                               json={"round": 1, "tag": "whatever", "count": 1,
+                                     "min": 1, "max": 100})
+        assert r.status_code == 200
+        assert r.json()["committed"] is False
+        assert "NOT COMMITTED" in r.json()["provenance_note"]
+
+
+class TestVerifyEndpointHonesty:
+    def test_an_unsigned_deployment_is_not_reported_as_attributable(self, client):
+        """The `client` fixture's beacon has no key, as an unsigned deployment would not."""
+        r = client.get("/v1/beacon/verify/1").json()
+        assert r["attributable"] is False, "an unsigned pulse cannot be attributed to anyone"
+        assert r["checked_against_key"] is None
+
+    def test_a_signed_deployment_is_attributable(self, signed_client):
+        r = signed_client.get("/v1/beacon/verify/1").json()
+        assert r["valid"] is True and r["attributable"] is True
+
+    def test_chain_verification_is_public(self, signed_client):
+        SERVICE.beacon.emit()
+        r = signed_client.get("/v1/beacon/verify-chain?start=1&count=10")
+        assert r.status_code == 200
+        assert r.json()["valid"] is True and r.json()["attributable"] is True

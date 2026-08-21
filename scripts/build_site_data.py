@@ -30,6 +30,12 @@ ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
 
+#: The draw the demo page ships pre-announced. Committed before its deciding pulse is
+#: emitted, so the page can show the one property a pulse cannot demonstrate about
+#: itself: that the draw was named while the outcome did not yet exist.
+DEMO_TAG = "spring-giveaway-2026"
+
+
 async def build(rounds: int, spacing: float, period: int) -> dict:
     from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 
@@ -43,18 +49,31 @@ async def build(rounds: int, spacing: float, period: int) -> dict:
 
     svc = BeamlineService()
     await svc.start()
+
+    # Stop the service emitting on its own schedule. This script needs the round
+    # numbers it hands out to be the round numbers that land -- a commitment names a
+    # specific future round, and a background pulse arriving between the commit and
+    # the emit would make the receipt name a round that is already in the past.
+    for task in svc._tasks:
+        if task.get_name() == "pulse":
+            task.cancel()
+
     try:
         # Give the network sources a chance to land at least one sample each, so the
         # provenance blocks on the published pulses are real rather than local-only.
         await asyncio.sleep(spacing)
+        commitment = None
         for i in range(rounds):
+            if i == rounds - 1:
+                # Announced while the chain still stands one round short, so the
+                # receipt's created_after_round proves the deciding pulse did not
+                # exist yet. Committing after the emit would produce a receipt that
+                # verifies and means nothing, which is the failure mode worth showing.
+                commitment = svc.beacon.commit(DEMO_TAG, target_round=rounds)
             svc.beacon.emit()
             print(f"  round {i + 1}/{rounds}", file=sys.stderr)
             if i < rounds - 1:
                 await asyncio.sleep(spacing)
-        # Read the chain back from the database rather than collecting the return
-        # values: the service's own pulse loop may have emitted alongside us, and a
-        # chain with a hole in it would fail the consecutive-round check on the site.
         pulses = svc.db.pulse_range(1, rounds)
     finally:
         await svc.stop()
@@ -63,6 +82,7 @@ async def build(rounds: int, spacing: float, period: int) -> dict:
         "public_key": svc.beacon.public_key_hex,
         "period_seconds": period,
         "pulses": pulses,
+        "commitment": commitment,
     }
 
 

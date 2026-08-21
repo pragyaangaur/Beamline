@@ -44,6 +44,31 @@ CREATE TABLE IF NOT EXISTS pulses (
     body       TEXT NOT NULL          -- full pulse JSON
 );
 CREATE INDEX IF NOT EXISTS pulses_ts ON pulses(timestamp);
+
+-- A draw announced before the pulse that decides it exists.
+--
+-- The beacon proves a pulse was not tampered with. It cannot prove the draw was
+-- named first, and "named first" is the property the whole product rests on: a
+-- runner who picks the tag after seeing the pulse, or picks which pulse to use,
+-- rigs the outcome without touching a single byte of cryptography. Recording the
+-- announcement -- the exact tag, the exact target round, and the round the chain
+-- had reached at the time -- is what turns that convention into evidence.
+--
+-- created_after_round is the load-bearing column. If it is below target_round, the
+-- pulse that decided the draw had not been emitted when the draw was named.
+CREATE TABLE IF NOT EXISTS commitments (
+    commit_id          TEXT PRIMARY KEY,
+    tag                TEXT NOT NULL,
+    target_round       INTEGER NOT NULL,
+    created_at_ms      INTEGER NOT NULL,
+    created_after_round INTEGER NOT NULL,
+    key_id             TEXT NOT NULL DEFAULT '',
+    public_key         TEXT,
+    signature          TEXT,
+    body               TEXT NOT NULL      -- full signed receipt JSON
+);
+CREATE INDEX IF NOT EXISTS commitments_round ON commitments(target_round);
+CREATE INDEX IF NOT EXISTS commitments_key ON commitments(key_id, created_at_ms);
 """
 
 
@@ -151,6 +176,42 @@ class Database:
             (start, min(count, 500)),
         ).fetchall()
         return [json.loads(r["body"]) for r in rows]
+
+    # --- commitments ------------------------------------------------------
+    def insert_commitment(self, receipt: dict, key_id: str = "") -> None:
+        with self._conn() as c:
+            c.execute(
+                "INSERT INTO commitments (commit_id, tag, target_round, created_at_ms,"
+                " created_after_round, key_id, public_key, signature, body)"
+                " VALUES (?,?,?,?,?,?,?,?,?)",
+                (receipt["commit_id"], receipt["tag"], receipt["target_round"],
+                 receipt["created_at_ms"], receipt["created_after_round"], key_id,
+                 receipt.get("public_key"), receipt.get("signature"),
+                 json.dumps(receipt)),
+            )
+
+    def get_commitment(self, commit_id: str) -> dict | None:
+        row = self._conn().execute(
+            "SELECT body FROM commitments WHERE commit_id = ?", (commit_id,)
+        ).fetchone()
+        return json.loads(row["body"]) if row else None
+
+    def commitments_for_round(self, target_round: int) -> list[dict]:
+        """Every draw announced against one pulse.
+
+        Public on purpose: an entrant who can see all the commitments naming a round
+        can tell whether the runner announced one draw or quietly announced twenty and
+        published the one they liked.
+        """
+        rows = self._conn().execute(
+            "SELECT body FROM commitments WHERE target_round = ? ORDER BY created_at_ms",
+            (target_round,),
+        ).fetchall()
+        return [json.loads(r["body"]) for r in rows]
+
+    def count_commitments(self) -> int:
+        return self._conn().execute(
+            "SELECT COUNT(*) AS n FROM commitments").fetchone()["n"]
 
     def pulse_count(self) -> int:
         return self._conn().execute("SELECT COUNT(*) AS n FROM pulses").fetchone()["n"]

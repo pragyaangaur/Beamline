@@ -236,7 +236,7 @@
   </footer>
 </div>
 
-<script id="draw-data" type="application/json">{"tag":"midsummer-giveaway-2026","winners":[1406,4432,277],"entrants":4820,"pulse":{"version":"beamline/pulse/v2","round":8,"timestamp_ms":1787150384001,"period_seconds":8,"prev_output":"7c40793fb19797d286eb1583c84450ea3d3ce41192b8a605e76dcb8a8ad2d947a3f4852de8147158ce86c317797abec3fd53b15eabc2172758bec510e8c2b795","local_value":"d2e0075e9af2fc95b0dabada7efd4ecd189e6546e700a359ca90a6240a208cbae011d995bc309b425d719fcbf4f26a4e71dcc23550298a3f5ae56408bc60f67a","public_key":"1e83433f5b22f106fe358e8594a7e9d248955831f13d9c1938aeb263fa30594b","provenance":{"local_os":{"at":1787150381.666553,"bytes":64,"digest":"25ac6f760a20c75498326f7573c6157af64a563ad73e1516060a3f3884903492","provider":"kernel getrandom(2)"},"anu_qrng":{"at":1787150382.816902,"bytes":1530,"digest":"0c404cf4d450cada3860673524000f6e7fb3b3bdcf53f39b62ee0901f9b32b3a","provider":"local_archive","blocks":2,"chars":2048,"source_entropy_bits":12241,"remaining_blocks":4251},"astro":{"at":1787150328.258965,"bytes":871,"digest":"be884aeb98b80a2d3a23b93da48b345a2b449850715604265c1e19b17de4676c","feeds":{"goes_xray":{"rows":6,"latest_time_tag":"2026-08-19T14:34:00Z"},"solar_wind_plasma":{"rows":6,"latest_time_tag":"2026-08-18T14:36:00"},"solar_wind_mag":{"rows":6,"latest_time_tag":"2026-08-18T14:36:00"}},"advanced":true}},"output":"2ca25ca1582792f981497a315d7a5d3729678508cc45e8422ff1e739dc3eaef77b357bb39195ea2fa9fdf8d54af561aa0bac296768958f9ee80f69bed7fca815","signature":"ef165845b515921bdbab4929604eb22a94b73f87b803a285fdb86e6f4ca070bafce3c3738cb42a7c0cb3b192409eb918d17f1522e241e07a2af8ef24c4a0fb03"},"publicKey":"1e83433f5b22f106fe358e8594a7e9d248955831f13d9c1938aeb263fa30594b","min":1,"max":4820,"count":3}</script>
+<script id="draw-data" type="application/json">{"tag":"midsummer-giveaway-2026","winners":[2071,1999,4363],"entrants":4820,"pulse":{"version":"beamline/pulse/v3","round":8,"timestamp_ms":1787336038374,"period_seconds":60,"prev_output":"39a340262eaaadcc23d3a9a1645a3290e9c811a6694d412b50c769eb7920c74bf3067dd3038443163902b4b1315e3355e11a63e8ba5175248abdfdaa2d39b48c","local_value":"d8975346e223fb95cf8dd770ce5fa1ffbd1e8bb15ff9561d6979a52663cecc73e08a8ea94475af5a5849c557ef4f1ba0a0182e5024fdc7dc5f709f59ef5c62a9","public_key":"87d4837ecb315aa3c02c808568b2b85851d3bb3d03fb67b0dfcbd9f1f7c4d118","provenance":{"local_os":{"at_ms":1787336037368,"bytes":64,"digest":"1cb7fa4b3b7b845ee9555337ad34342ff0bc86311173819aef7b8d976f325e13","provider":"kernel getrandom(2)"},"anu_qrng":{"at_ms":1787336036380,"bytes":1530,"digest":"5f009aea1063734b685e00aca60ca0f3d9667a6225e8f774a172a733eb777041","provider":"local_archive","blocks":2,"chars":2048,"source_entropy_bits":12241,"remaining_blocks":3840},"astro":{"at_ms":1787336035713,"bytes":871,"digest":"42ab144736efb3a765bcce977215cbc747af13fba9ca2eac87aea4336e11acee","feeds":{"goes_xray":{"rows":6,"latest_time_tag":"2026-08-21T18:10:00Z"},"solar_wind_plasma":{"rows":6,"latest_time_tag":"2026-08-20T18:12:00"},"solar_wind_mag":{"rows":6,"latest_time_tag":"2026-08-20T18:12:00"}},"advanced":true}},"output":"f47328a4cc0eec20a4ca82cf2a26f8eed136cd538f62c6e3971bb4c2e4211ac084a521d18f7be28ee27b3d26a17aa9aeadb9866d0c96b38a5a1ab5e746f8a055","signature":"df1e9f650e25fd106ae30b28f7eb1c927ee53bedde257f28ea9daad99c81d2d2f6517541f8eb48886381228501fa24d1abfe8bec7cea92550ec45d8778361000"},"commitment":{"version":"beamline/commitment/v1","commit_id":"298d561642a6b6f643dcafcf266b040c","tag":"midsummer-giveaway-2026","target_round":8,"created_at_ms":1787336038374,"created_after_round":7,"public_key":"87d4837ecb315aa3c02c808568b2b85851d3bb3d03fb67b0dfcbd9f1f7c4d118","signature":"01430d29d234d657ff5835168a873c6d53f4cea9593a021ff2606ed99a1cb232b75c924d5f0ab17a898d9317c6cfd886d9c11bd1dfa9791bdd0bd4de6964cd0f"},"publicKey":"87d4837ecb315aa3c02c808568b2b85851d3bb3d03fb67b0dfcbd9f1f7c4d118","min":1,"max":4820,"count":3}</script>
 <script>
 const D = JSON.parse(document.getElementById("draw-data").textContent);
 const enc = new TextEncoder();
@@ -250,21 +250,73 @@ const cat = (...a) => { const n=a.reduce((s,x)=>s+x.length,0), o=new Uint8Array(
 const u32 = n => new Uint8Array([(n>>>24)&255,(n>>>16)&255,(n>>>8)&255,n&255]);
 const sha512 = async b => new Uint8Array(await crypto.subtle.digest("SHA-512", b));
 
-/* Canonical pulse bytes: sorted keys, no whitespace, timestamp to 3dp.
-   Must match the server byte for byte or the output hash will not reproduce. */
-function stable(v){
-  if (v === null || typeof v !== "object") return JSON.stringify(v);
-  if (Array.isArray(v)) return "[" + v.map(stable).join(",") + "]";
-  return "{" + Object.keys(v).sort()
-    .map(k => JSON.stringify(k) + ":" + stable(v[k])).join(",") + "}";
+/* Canonical pulse bytes. The exact subset the server signs: objects, arrays,
+   strings, integers below 2^53, booleans, null. No floats -- they have no shared
+   decimal spelling, and 1787300619.0 in Python is 1787300619 here. ASCII keys sorted
+   bytewise, everything else escaped per UTF-16 code unit. Must match the server byte
+   for byte or the output hash will not reproduce. */
+const SHORT_ESC = { '"':'\\"', "\\":"\\\\", "\n":"\\n", "\r":"\\r", "\t":"\\t",
+                    "\b":"\\b", "\f":"\\f" };
+function cstr(str){
+  let o = '"';
+  for (let i=0;i<str.length;i++){
+    const ch=str[i], c=str.charCodeAt(i);
+    if (SHORT_ESC[ch]!==undefined) o+=SHORT_ESC[ch];
+    else if (c>=0x20 && c<=0x7e) o+=ch;
+    else o+="\\u"+c.toString(16).padStart(4,"0");
+  }
+  return o+'"';
+}
+function cenc(v, path){
+  if (v===null) return "null";
+  if (v===true) return "true";
+  if (v===false) return "false";
+  if (typeof v==="number"){
+    if (!Number.isSafeInteger(v)) throw new Error(path+": "+v+" is not a safe integer");
+    return String(v);
+  }
+  if (typeof v==="string") return cstr(v);
+  if (Array.isArray(v)) return "["+v.map((x,i)=>cenc(x,path+"["+i+"]")).join(",")+"]";
+  if (typeof v==="object") return "{"+Object.keys(v).sort().map(k=>{
+    if (!/^[\x00-\x7f]*$/.test(k)) throw new Error(path+": key is not ASCII");
+    return cstr(k)+":"+cenc(v[k],path+"."+k);
+  }).join(",")+"}";
+  throw new Error(path+": "+typeof v+" is not encodable");
 }
 function canonical(p){
-  return enc.encode(stable({
+  return enc.encode(cenc({
     local_value:p.local_value, period_seconds:p.period_seconds, prev_output:p.prev_output,
-    public_key:p.public_key ?? null, provenance:p.provenance, round:p.round,
+    public_key:p.public_key ?? null, provenance:p.provenance ?? {}, round:p.round,
     timestamp_ms:p.timestamp_ms, version:p.version,
-  }));
+  }, "$"));
 }
+
+const PULSE_VERSION = "beamline/pulse/v3";
+const COMMIT_VERSION = "beamline/commitment/v1";
+const HEXLEN = { prev_output:128, local_value:128, output:128, public_key:64, signature:128 };
+
+/* Everything the signature check would otherwise have to survive. Checked first, so a
+   thrown exception downstream can be treated as a failure rather than interpreted. */
+function structureError(p){
+  if (!p || typeof p!=="object") return "the pulse is not an object";
+  if (p.version!==PULSE_VERSION) return "unexpected pulse version "+p.version;
+  for (const f of ["round","timestamp_ms","period_seconds"])
+    if (!Number.isSafeInteger(p[f])) return f+" is not an integer";
+  for (const f of ["prev_output","local_value","output"])
+    if (typeof p[f]!=="string" || !new RegExp("^[0-9a-f]{"+HEXLEN[f]+"}$").test(p[f]))
+      return f+" is not "+HEXLEN[f]+" hex characters";
+  for (const f of ["public_key","signature"])
+    if (typeof p[f]!=="string" || !new RegExp("^[0-9a-f]{"+HEXLEN[f]+"}$").test(p[f]))
+      return f+" is not "+HEXLEN[f]+" hex characters";
+  try { canonical(p); } catch(e){ return "the body is not canonically encodable: "+e.message; }
+  return null;
+}
+
+const commitBody = c => enc.encode(cenc({
+  version:c.version, commit_id:c.commit_id, tag:c.tag, target_round:c.target_round,
+  created_at_ms:c.created_at_ms, created_after_round:c.created_after_round,
+  public_key:c.public_key ?? null,
+}, "$"));
 
 /* The deterministic stream a pulse and tag expand to. */
 class Stream{
@@ -300,6 +352,11 @@ async function verify(){
   $("chip").textContent="Checking"; $("msg").textContent="Recomputing from the pulse...";
 
   let allOk = true;
+  const structural = structureError(D.pulse);
+  if (structural){
+    allOk = false;
+    line("The pulse is malformed: " + structural,"bad");
+  }
   line("Recomputing the pulse output hash from its contents...","run");
   const recomputed = hex(await sha512(cat(enc.encode(D.pulse.version), enc.encode("|"),
                                           canonical(D.pulse))));
@@ -316,20 +373,65 @@ async function verify(){
   else line("Matches the published winners exactly.","ok");
 
   line("Checking the Ed25519 signature...","run");
-  try{
-    /* Verify against the key the pulse itself declares. That key sits inside the
-       signed body, so it cannot be swapped without breaking the hash check above. */
-    const declared = D.pulse.public_key;
-    const key = await crypto.subtle.importKey("raw", hexToBytes(declared),
-                  {name:"Ed25519"}, false, ["verify"]);
-    const good = await crypto.subtle.verify("Ed25519", key,
-                  hexToBytes(D.pulse.signature), canonical(D.pulse));
-    if (!good){ allOk=false; line("Signature is INVALID.","bad"); }
-    else if (declared === D.publicKey) line("Signature is valid for Beamline's published key.","ok");
-    else line("Signature is valid, but under a different key than published - "
-              + "the operator rotated signing keys.","bad");
-  } catch(e){
-    line("This browser cannot check Ed25519; hash and derivation were still verified.");
+  /* Two rules here, and both of them used to be broken.
+
+     A signature under a key other than the published one is a FAILURE. It used to
+     print a warning and leave the verdict passing, so a record signed by anybody's
+     key verified.
+
+     A signature that cannot be checked is NOT a pass. The catch below used to report
+     that the hash and derivation still verified and leave allOk alone -- so making
+     the check throw, by handing it an unparseable key, produced a green "Verified". */
+  if (D.pulse.public_key !== D.publicKey){
+    allOk = false;
+    line("Signed by a key Beamline never published. Treat this record as unproven.","bad");
+  } else {
+    let good = false, checkable = true;
+    try {
+      const key = await crypto.subtle.importKey("raw", hexToBytes(D.pulse.public_key),
+                    {name:"Ed25519"}, false, ["verify"]);
+      good = await crypto.subtle.verify("Ed25519", key,
+               hexToBytes(D.pulse.signature), canonical(D.pulse));
+    } catch(e){ checkable = false; }
+    if (!checkable){
+      allOk = false;
+      line("This browser cannot check Ed25519, so nothing here is attributable to "
+           + "Beamline. Verify with the Python SDK instead.","bad");
+    } else if (!good){
+      allOk = false;
+      line("Signature is INVALID.","bad");
+    } else {
+      line("Signature is valid for Beamline's published key.","ok");
+    }
+  }
+
+  line("Checking the draw was announced before this pulse existed...","run");
+  /* The check that has nothing to do with cryptography. Given a published pulse,
+     anyone can try draw names until one crowns the entrant they wanted, and every
+     one of those results reproduces perfectly. Only the receipt rules that out. */
+  if (!D.commitment){
+    allOk = false;
+    line("No commitment published with this record. The numbers reproduce, but "
+         + "nothing shows the name and the round were not chosen after the pulse "
+         + "was published.","bad");
+  } else {
+    const c = D.commitment;
+    let ok = c.version === COMMIT_VERSION
+          && c.tag === D.tag
+          && c.target_round === D.pulse.round
+          && Number.isSafeInteger(c.created_after_round)
+          && c.created_after_round < c.target_round
+          && c.public_key === D.publicKey;
+    if (ok){
+      try {
+        const key = await crypto.subtle.importKey("raw", hexToBytes(c.public_key),
+                      {name:"Ed25519"}, false, ["verify"]);
+        ok = await crypto.subtle.verify("Ed25519", key, hexToBytes(c.signature), commitBody(c));
+      } catch(e){ ok = false; }
+    }
+    if (ok) line('"' + c.tag + '" was registered at round ' + c.created_after_round
+                 + ", before round " + c.target_round + " existed.","ok");
+    else { allOk = false; line("The commitment does not cover this draw.","bad"); }
   }
 
   v.dataset.state = allOk ? "ok" : "bad";
