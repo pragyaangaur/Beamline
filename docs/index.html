@@ -160,7 +160,7 @@
       <div class="grid">
         <div class="f" style="grid-column:span 2">
           <label for="tag">Draw name</label>
-          <input id="tag" value="midsummer-giveaway" spellcheck="false" maxlength="120">
+          <input id="tag" value="spring-giveaway-2026" spellcheck="false" maxlength="120">
         </div>
         <div class="f"><label for="entrants">Entrants</label>
           <input id="entrants" type="number" value="4820" min="1" max="10000000"></div>
@@ -180,8 +180,11 @@
       </div>
     </div>
     <p class="fine">Same name, same pulse, same winners &mdash; every time, for anyone.
-    Change one character of the name and they are completely different. Publish the name
-    before the pulse exists and nobody, including you, can pick the outcome.</p>
+    Change one character of the name and they are completely different &mdash; which is
+    exactly why reproducing the numbers is not enough. Anyone holding a published pulse
+    can try names until one crowns the entrant they wanted, and every one of those
+    results verifies. The name has to be registered <em>before</em> the pulse exists.
+    This draw was: change it and watch <b>Announced first</b> fail.</p>
   </div>
 
   <!-- ============ CHECK ============ -->
@@ -407,6 +410,42 @@ async function signatureState(p) {
       { name: "Ed25519" }, false, ["verify"]);
     return (await crypto.subtle.verify("Ed25519", key, hexToBytes(p.signature), canonical(p)))
       ? "ok" : "bad";
+  } catch (e) { return "bad"; }
+}
+
+/* ---------- commitments ----------
+   A pulse proves it was not edited. It cannot prove the draw was named before it
+   existed, and that is the claim the whole thing rests on: given a published pulse,
+   a runner can search draw names until one crowns the entrant they want -- a hundred
+   entrants costs about a hundred tries -- or keep the name and choose which pulse to
+   call the draw. Both produce results that verify perfectly.
+
+   So the announcement is signed too, and carries the round the chain had reached when
+   it was made. If that is not below the round being drawn from, the receipt proves
+   nothing, and no signature can rescue it. */
+const COMMIT = DATA.commitment || null;
+const COMMIT_VERSION = "beamline/commitment/v1";
+const commitBody = (c) => enc.encode(cenc({
+  version: c.version, commit_id: c.commit_id, tag: c.tag, target_round: c.target_round,
+  created_at_ms: c.created_at_ms, created_after_round: c.created_after_round,
+  public_key: c.public_key ?? null,
+}, "$"));
+
+/* "ok" | "bad" | "mismatch" | "none" | "unavailable" */
+async function commitmentState(tag, round) {
+  if (!COMMIT) return "none";
+  if (COMMIT.version !== COMMIT_VERSION) return "bad";
+  if (!Number.isSafeInteger(COMMIT.target_round) ||
+      !Number.isSafeInteger(COMMIT.created_after_round)) return "bad";
+  if (COMMIT.target_round <= COMMIT.created_after_round) return "bad";
+  if (COMMIT.tag !== tag || COMMIT.target_round !== round) return "mismatch";
+  if (COMMIT.public_key !== PUBKEY || !COMMIT.signature) return "bad";
+  if (!(await haveEd25519())) return "unavailable";
+  try {
+    const key = await crypto.subtle.importKey("raw", hexToBytes(COMMIT.public_key),
+      { name: "Ed25519" }, false, ["verify"]);
+    return (await crypto.subtle.verify("Ed25519", key, hexToBytes(COMMIT.signature),
+      commitBody(COMMIT))) ? "ok" : "bad";
   } catch (e) { return "bad"; }
 }
 
