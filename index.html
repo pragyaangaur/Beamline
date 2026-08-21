@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Beamline: provably fair draws</title>
 <meta name="description" content="Run a draw anyone can check. Pick winners from a public signed pulse, then verify the result yourself in the browser.">
-<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='7' fill='%230B57D0'/><path d='M5 12.6 L11.2 24.4 L22.6 10.4' fill='none' stroke='%23fff' stroke-width='3.3' stroke-linecap='round' stroke-linejoin='round'/><path d='M0 -5.4 L5 3.5 L-5 3.5 Z' fill='%23fff' transform='translate(24.3 8.2) rotate(39)'/></svg>">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='7' fill='%230B57D0'/><path d='M5.3 12.5 L16 21.5 L24 14.8' fill='none' stroke='%23fff' stroke-width='3.3' stroke-linecap='round' stroke-linejoin='round'/><path d='M0 -5 L4.7 3.3 L-4.7 3.3 Z' fill='%23fff' transform='translate(25.5 13.5) rotate(50)'/></svg>">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=IBM+Plex+Mono:wght@400;500&display=swap">
@@ -108,6 +108,13 @@
   .stamp{display:flex; align-items:center; gap:16px; flex-wrap:wrap; margin-top:26px;
          padding-top:22px; border-top:1px solid var(--line-2); font-size:17px;
          color:var(--ink-2)}
+  /* Takes a line of its own so a repeated draw can say so out loud. A determinstic
+     result is identical every time, which without this reads as a dead button. */
+  #stamp-note{flex-basis:100%; font-size:16px; color:var(--ink-3); margin:0}
+  #stamp-note:empty{display:none}
+  .empty{margin-top:28px; padding:34px 24px; border:2px dashed var(--line);
+         border-radius:10px; text-align:center; color:var(--ink-3); font-size:17px}
+  .empty b{color:var(--ink); font-weight:600}
   .badge{font-size:13px; font-weight:700; letter-spacing:.07em; text-transform:uppercase;
          padding:7px 14px; border-radius:6px; background:var(--sunk); color:var(--ink-3)}
   .badge.ok{background:var(--ok-soft); color:var(--ok)}
@@ -171,10 +178,12 @@
     <a class="brand" href="./">
       <svg class="logo" viewBox="0 0 32 32" role="img" aria-label="Beamline">
         <rect width="32" height="32" rx="7" fill="#0B57D0"/>
-        <path d="M5 12.6 L11.2 24.4 L22.6 10.4" fill="none" stroke="#fff" stroke-width="3.3"
+        <!-- Vertex on the tile's centre line at x=16. Each leg sits 50 degrees off
+             vertical, so the bend opens to 100 degrees. -->
+        <path d="M5.3 12.5 L16 21.5 L24 14.8" fill="none" stroke="#fff" stroke-width="3.3"
               stroke-linecap="round" stroke-linejoin="round"/>
-        <path d="M0 -5.4 L5 3.5 L-5 3.5 Z" fill="#fff"
-              transform="translate(24.3 8.2) rotate(39)"/>
+        <path d="M0 -5 L4.7 3.3 L-4.7 3.3 Z" fill="#fff"
+              transform="translate(25.5 13.5) rotate(50)"/>
       </svg>
       <span class="mark">Beamline</span>
     </a>
@@ -217,6 +226,7 @@
       <div class="stamp">
         <span class="badge" id="stamp-badge">&nbsp;</span>
         <span id="stamp-text">&nbsp;</span>
+        <span id="stamp-note"></span>
       </div>
     </div>
 
@@ -352,6 +362,8 @@ const enc = new TextEncoder();
 let working = structuredClone(PUBLISHED);
 let current = working[working.length - 1];
 let lastDraw = null;
+let runs = 0;          // how many draws the visitor has asked for
+let lastKey = null;    // the inputs behind the previous one
 
 /* ---------- bytes ---------- */
 const hex = (b) => Array.from(b, (x) => x.toString(16).padStart(2, "0")).join("");
@@ -449,13 +461,34 @@ function params() {
   return { tag: $("tag").value || "untitled-draw", entrants, count };
 }
 
+/* Before the first press. Without this the page would open on a finished draw,
+   and pressing the button would replace it with the identical result. */
+function emptyState() {
+  $("winners").innerHTML =
+    `<div class="empty">No draw yet. Press <b>Run the draw</b> to pick winners
+     from pulse #${current.round}.</div>`;
+  $("stamp-badge").className = "badge";
+  $("stamp-badge").textContent = "Ready";
+  $("stamp-text").textContent =
+    `Pulse #${current.round}, published ${utc(current.timestamp_ms)}.`;
+  $("stamp-note").textContent = "";
+}
+
 async function runDraw(flash) {
   const p = params();
+  const label = $("go").textContent;
   $("go").disabled = true;
+  $("go").textContent = "Drawing";
+
   const winners = await drawFrom(current.output, p.tag, p.count, p.entrants);
   $("winners").innerHTML = winners.map((w, i) =>
     `<div class="w${flash ? " flash" : ""}"><b>Winner ${i + 1}</b>
      <div class="num">#${w.toLocaleString()}</div></div>`).join("");
+
+  const key = `${p.tag}|${p.entrants}|${p.count}|${current.round}`;
+  const repeat = key === lastKey;
+  runs += 1;
+  lastKey = key;
   lastDraw = { tag: p.tag, entrants: p.entrants, count: p.count, winners };
 
   $("stamp-badge").className = "badge";
@@ -467,7 +500,16 @@ async function runDraw(flash) {
   $("stamp-text").innerHTML = ok
     ? `Drawn from pulse <b>#${current.round}</b>, published ${utc(current.timestamp_ms)}.`
     : `Pulse #${current.round} does not check out. Open the Check tab.`;
+
+  // Say what the press did, because a correct repeat looks like nothing happening.
+  $("stamp-note").textContent =
+    runs === 1 ? "" :
+    repeat ? `Run ${runs}. Identical to the last one, and it always will be: the pulse `
+             + `is fixed and the draw is derived from it.`
+           : `Run ${runs}. New inputs, so these winners are unrelated to the last set.`;
+
   $("go").disabled = false;
+  $("go").textContent = label;
 }
 
 /* ================= CHECK ================= */
@@ -672,7 +714,8 @@ $("c-reset").addEventListener("click", resetChain);
 
 fill();
 paintChain();
-runDraw(false);
+runChecks(true);
+emptyState();
 </script>
 </body>
 </html>
