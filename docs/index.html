@@ -1,0 +1,868 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Beamline &mdash; run a draw, then try to rig it</title>
+<meta name="description" content="An interactive demonstration of publicly verifiable randomness. Run a draw against a real signed beacon pulse, then tamper with it and watch the verification fail. Everything runs in your browser.">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'><text y='13' font-size='14'>&#9678;</text></svg>">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@500;600;700&family=IBM+Plex+Mono:wght@400;500&family=Source+Serif+4:opsz,wght@8..60,400;8..60,600&display=swap">
+<style>
+  /* Light palette on bare :root -- the un-stamped "system" state resolves here. */
+  :root{
+    --paper:#EEF2F1; --raise:#F7FAF9; --sunk:#E2E9E8;
+    --ink:#0C1116; --ink-2:#3C4A50; --ink-3:#6B7C82;
+    --rule:#CBD6D5; --rule-2:#DEE6E5;
+    --accent:#0B6E77; --accent-soft:#D6E9EA;
+    --beacon:#A96A12; --beacon-soft:#F2E3C9;
+    --ok:#14713F; --ok-soft:#D3E9DC;
+    --alert:#A6202F; --alert-soft:#F3D8DB;
+    --shadow:0 1px 2px rgba(12,17,22,.06),0 8px 24px -12px rgba(12,17,22,.18);
+  }
+  @media (prefers-color-scheme:dark){
+    :root:not([data-theme="light"]){
+      --paper:#0B1013; --raise:#131B1F; --sunk:#080C0F;
+      --ink:#E6EFEE; --ink-2:#A7B8BA; --ink-3:#75898C;
+      --rule:#243033; --rule-2:#1B2427;
+      --accent:#3DD6DF; --accent-soft:#0E3438;
+      --beacon:#E0A33F; --beacon-soft:#3A2C12;
+      --ok:#46C97C; --ok-soft:#0F3021;
+      --alert:#FF7480; --alert-soft:#3A161A;
+      --shadow:0 1px 2px rgba(0,0,0,.5),0 8px 24px -12px rgba(0,0,0,.7);
+    }
+  }
+  :root[data-theme="dark"]{
+    --paper:#0B1013; --raise:#131B1F; --sunk:#080C0F;
+    --ink:#E6EFEE; --ink-2:#A7B8BA; --ink-3:#75898C;
+    --rule:#243033; --rule-2:#1B2427;
+    --accent:#3DD6DF; --accent-soft:#0E3438;
+    --beacon:#E0A33F; --beacon-soft:#3A2C12;
+    --ok:#46C97C; --ok-soft:#0F3021;
+    --alert:#FF7480; --alert-soft:#3A161A;
+    --shadow:0 1px 2px rgba(0,0,0,.5),0 8px 24px -12px rgba(0,0,0,.7);
+  }
+
+  *{box-sizing:border-box}
+  html{scroll-behavior:smooth}
+  body{
+    margin:0; background:var(--paper); color:var(--ink);
+    font-family:"Source Serif 4",Georgia,serif; font-size:17px; line-height:1.6;
+    -webkit-font-smoothing:antialiased;
+  }
+  .wrap{max-width:880px; margin:0 auto; padding:clamp(24px,5vw,60px) clamp(18px,4vw,32px) 96px}
+  h1,h2,h3,.ui,button,input,select,label,th{font-family:Archivo,"Helvetica Neue",Arial,sans-serif}
+  code,.mono{font-family:"IBM Plex Mono",ui-monospace,Menlo,monospace}
+  a{color:var(--accent)}
+
+  /* ---- masthead ---- */
+  .mast{display:flex; align-items:baseline; gap:12px; flex-wrap:wrap;
+        padding-bottom:14px; border-bottom:2px solid var(--ink); margin-bottom:6px}
+  .mark{font-family:Archivo,sans-serif; font-weight:700; font-size:15px;
+        letter-spacing:.18em; text-transform:uppercase}
+  .mast .sub{font-family:Archivo,sans-serif; font-size:12px; letter-spacing:.14em;
+             text-transform:uppercase; color:var(--ink-3); margin-left:auto}
+  .rule-thin{height:1px; background:var(--rule); margin-bottom:34px}
+
+  h1{font-size:clamp(30px,5.4vw,46px); line-height:1.08; font-weight:700; margin:26px 0 12px;
+     letter-spacing:-.025em; text-wrap:balance}
+  .standfirst{color:var(--ink-2); max-width:64ch; margin:0 0 22px; font-size:18px}
+  .standfirst strong{color:var(--ink); font-weight:600}
+
+  section{margin-top:60px; scroll-margin-top:20px}
+  .sechead{display:flex; align-items:baseline; gap:14px; border-top:2px solid var(--ink);
+           padding-top:10px; margin-bottom:18px}
+  .sechead .n{font-family:Archivo,sans-serif; font-weight:700; font-size:12px;
+              letter-spacing:.16em; color:var(--accent)}
+  .sechead h2{font-size:clamp(21px,3.2vw,27px); font-weight:700; margin:0;
+              letter-spacing:-.018em}
+  section > p{color:var(--ink-2); max-width:64ch}
+
+  /* ---- panels ---- */
+  .panel{background:var(--raise); border:1px solid var(--rule); border-radius:4px;
+         padding:20px; box-shadow:var(--shadow); margin:20px 0}
+  .panel h3{font-size:12px; letter-spacing:.14em; text-transform:uppercase;
+            color:var(--ink-3); margin:0 0 14px; font-weight:600}
+
+  .fields{display:grid; grid-template-columns:repeat(auto-fit,minmax(150px,1fr)); gap:14px}
+  .field{display:flex; flex-direction:column; gap:5px; min-width:0}
+  .field label{font-size:10.5px; letter-spacing:.13em; text-transform:uppercase;
+               color:var(--ink-3); font-weight:600}
+  input,select{font-family:"IBM Plex Mono",monospace; font-size:13.5px; color:var(--ink);
+        background:var(--paper); border:1px solid var(--rule); border-radius:3px;
+        padding:9px 10px; width:100%; min-width:0}
+  input:focus,select:focus{outline:2px solid var(--accent); outline-offset:-1px; border-color:transparent}
+  input.bad{border-color:var(--alert); background:var(--alert-soft)}
+  .check{flex-direction:row; align-items:center; gap:8px}
+  .check input{width:auto}
+  .check label{text-transform:none; letter-spacing:.02em; font-size:13px; color:var(--ink-2)}
+
+  .actions{display:flex; gap:10px; flex-wrap:wrap; margin-top:16px; align-items:center}
+  button{font-family:Archivo,sans-serif; font-size:13.5px; font-weight:600; letter-spacing:.02em;
+         background:var(--ink); color:var(--paper); border:1px solid var(--ink); border-radius:3px;
+         padding:10px 16px; cursor:pointer; transition:opacity .15s}
+  button:hover{opacity:.85}
+  button:focus-visible{outline:2px solid var(--accent); outline-offset:2px}
+  button[disabled]{opacity:.4; cursor:default}
+  button.ghost{background:transparent; color:var(--ink-2); border-color:var(--rule)}
+  button.danger{background:transparent; color:var(--alert); border-color:var(--alert)}
+  .hint{font-size:13px; color:var(--ink-3); margin:10px 0 0}
+
+  /* ---- verdict ---- */
+  .verdict{display:flex; align-items:center; gap:12px; flex-wrap:wrap;
+           background:var(--sunk); border:1px solid var(--rule-2);
+           border-left:4px solid var(--ink-3); border-radius:3px;
+           padding:14px 16px; margin:16px 0 0}
+  .verdict[data-state="ok"]{border-left-color:var(--ok)}
+  .verdict[data-state="bad"]{border-left-color:var(--alert)}
+  .chip{font-family:Archivo,sans-serif; font-size:11px; font-weight:700;
+        letter-spacing:.13em; text-transform:uppercase; padding:5px 10px; border-radius:2px;
+        background:var(--rule-2); color:var(--ink-2); white-space:nowrap}
+  .verdict[data-state="ok"] .chip{background:var(--ok-soft); color:var(--ok)}
+  .verdict[data-state="bad"] .chip{background:var(--alert-soft); color:var(--alert)}
+  .verdict .msg{font-size:15px; color:var(--ink-2); flex:1; min-width:220px;
+                font-family:"Source Serif 4",Georgia,serif}
+
+  /* ---- winners ---- */
+  .winners{display:flex; gap:10px; flex-wrap:wrap; margin:18px 0 0}
+  .winner{flex:1 1 130px; background:var(--sunk); border:1px solid var(--rule-2);
+          border-top:3px solid var(--accent); border-radius:3px; padding:14px 16px}
+  .winner .lbl{font-family:Archivo,sans-serif; font-size:10px; letter-spacing:.14em;
+               text-transform:uppercase; color:var(--ink-3)}
+  .winner .num{font-family:"IBM Plex Mono",monospace; font-size:27px; font-weight:500;
+               font-variant-numeric:tabular-nums; letter-spacing:-.02em; margin-top:3px;
+               word-break:break-all}
+  .winner.changed{animation:flash .5s ease}
+  @keyframes flash{from{background:var(--accent-soft)}to{background:var(--sunk)}}
+
+  /* ---- data slabs ---- */
+  .slab{background:var(--sunk); border:1px solid var(--rule-2); border-radius:3px;
+        padding:13px 15px; overflow-x:auto; margin:14px 0 0}
+  .slab dl{margin:0; display:grid; grid-template-columns:auto 1fr; gap:7px 18px;
+           align-items:baseline; min-width:0}
+  .slab dt{font-family:Archivo,sans-serif; font-size:10.5px; letter-spacing:.13em;
+           text-transform:uppercase; color:var(--ink-3); white-space:nowrap}
+  .slab dd{margin:0; font-family:"IBM Plex Mono",monospace; font-size:12.5px;
+           word-break:break-all; font-variant-numeric:tabular-nums; color:var(--ink-2)}
+  .tagval{color:var(--accent); font-weight:500}
+  .beaconval{color:var(--beacon); font-weight:500}
+
+  .scroller{overflow-x:auto; margin:14px 0 0}
+  table{width:100%; border-collapse:collapse; font-family:"IBM Plex Mono",monospace;
+        font-size:12.5px; font-variant-numeric:tabular-nums; min-width:520px}
+  th{font-family:Archivo,sans-serif; font-size:10.5px; letter-spacing:.13em;
+     text-transform:uppercase; color:var(--ink-3); text-align:left; font-weight:600;
+     padding:0 14px 7px 0; border-bottom:1px solid var(--rule); white-space:nowrap}
+  td{padding:7px 14px 7px 0; border-bottom:1px solid var(--rule-2); color:var(--ink-2);
+     white-space:nowrap}
+  tr:last-child td{border-bottom:0}
+  td.hash{font-size:11.5px; color:var(--ink-3)}
+  tr.broken td{color:var(--alert)}
+  tr.edited td:first-child::after{content:" edited"; color:var(--alert); font-size:10px}
+  .state{font-family:Archivo,sans-serif; font-size:10.5px; font-weight:700;
+         letter-spacing:.1em; text-transform:uppercase}
+  .state.ok{color:var(--ok)} .state.bad{color:var(--alert)} .state.idle{color:var(--ink-3)}
+
+  /* ---- log ---- */
+  .log{margin:16px 0 0; padding:0; list-style:none; font-family:"IBM Plex Mono",monospace;
+       font-size:12.5px}
+  .log li{padding:6px 0 6px 24px; position:relative; color:var(--ink-2);
+          border-bottom:1px solid var(--rule-2); word-break:break-word}
+  .log li:last-child{border-bottom:0}
+  .log li::before{content:"|"; position:absolute; left:6px; color:var(--ink-3)}
+  .log li.ok::before{content:"\2713"; color:var(--ok)}
+  .log li.bad::before{content:"\2715"; color:var(--alert)}
+  .log li.run::before{content:"\203A"; color:var(--accent)}
+  .log li.bad{color:var(--alert)}
+
+  .note{border-left:2px solid var(--rule); padding:2px 0 2px 16px; margin:22px 0 0;
+        color:var(--ink-3); font-size:15px; max-width:64ch}
+  .note strong{color:var(--ink-2); font-weight:600}
+
+  .cols{display:grid; grid-template-columns:repeat(auto-fit,minmax(230px,1fr)); gap:18px; margin-top:20px}
+  .card{border-top:2px solid var(--rule); padding-top:12px}
+  .card h3{font-family:Archivo,sans-serif; font-size:14px; margin:0 0 6px; font-weight:600}
+  .card p{margin:0; font-size:14.5px; color:var(--ink-2)}
+
+  footer{margin-top:64px; padding-top:18px; border-top:1px solid var(--rule);
+         font-family:Archivo,sans-serif; font-size:12px; letter-spacing:.04em;
+         color:var(--ink-3); display:flex; gap:16px; flex-wrap:wrap}
+  @media (prefers-reduced-motion:reduce){*{transition:none!important; animation:none!important}
+    html{scroll-behavior:auto}}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="mast">
+    <span class="mark">Beamline</span>
+    <span class="sub">Live demonstration</span>
+  </div>
+  <div class="rule-thin"></div>
+
+  <h1>Run a draw. Then try to rig it.</h1>
+  <p class="standfirst">Beamline publishes a signed, hash-chained beacon pulse every
+  minute. Anything drawn from a pulse can be recomputed by anyone afterwards &mdash; which
+  is what turns &ldquo;trust us, it was random&rdquo; into something a sceptic can check.
+  <strong>The ten pulses on this page are real</strong>, produced by the code in this
+  repository and signed with Ed25519. Everything below runs in your browser: no server
+  call, no account, nothing to install.</p>
+
+  <!-- ===================== 1. THE DRAW ===================== -->
+  <section id="draw">
+    <div class="sechead"><span class="n">01</span><h2>Run a draw</h2></div>
+    <p>Name your draw, pick the pulse that will fix it, and press the button. The winners
+    are derived from the pulse hash by rejection sampling &mdash; the same algorithm the
+    server runs, reimplemented here in about forty lines.</p>
+
+    <div class="panel">
+      <h3>Draw parameters</h3>
+      <div class="fields">
+        <div class="field">
+          <label for="tag">Draw name (the tag)</label>
+          <input id="tag" value="midsummer-giveaway-2026" spellcheck="false" maxlength="120">
+        </div>
+        <div class="field">
+          <label for="entrants">Entrants</label>
+          <input id="entrants" type="number" value="4820" min="1" max="10000000">
+        </div>
+        <div class="field">
+          <label for="count">Winners</label>
+          <input id="count" type="number" value="3" min="1" max="50">
+        </div>
+        <div class="field">
+          <label for="round">Pulse</label>
+          <select id="round"></select>
+        </div>
+      </div>
+      <div class="actions">
+        <button id="go-draw">Run the draw</button>
+        <button id="again" class="ghost">Run it again</button>
+        <button id="nudge" class="ghost">Nudge the tag by one character</button>
+      </div>
+      <div class="winners" id="winners"></div>
+      <p class="hint" id="draw-hint">Entry numbers, in draw order. Drawn without repeats.</p>
+      <ul class="log" id="draw-log"><li>Nothing drawn yet.</li></ul>
+    </div>
+
+    <p class="note"><strong>Two things worth trying.</strong> Run the same draw twice: the
+    winners are identical, because the pulse is fixed and the derivation is deterministic.
+    Then nudge the tag by one character: the winners are completely different, and there is
+    no way to steer them anywhere in particular. In a real draw the tag is published
+    <em>before</em> the pulse exists, so the operator gets exactly one attempt.</p>
+  </section>
+
+  <!-- ===================== 2. TAMPER ===================== -->
+  <section id="tamper">
+    <div class="sechead"><span class="n">02</span><h2>Now try to change the result</h2></div>
+    <p>Below is the raw pulse behind the draw above, with its fields left editable. Change
+    anything &mdash; the timestamp, one hex character of the entropy value, the signature
+    &mdash; and run the check. The verifier recomputes the pulse hash, re-derives the
+    winners, and checks the Ed25519 signature using WebCrypto.</p>
+
+    <div class="panel">
+      <h3>Pulse <span id="p-round-label" class="mono"></span> &mdash; editable</h3>
+      <div class="fields">
+        <div class="field"><label for="f-round">round</label>
+          <input id="f-round" type="number" data-field="round"></div>
+        <div class="field"><label for="f-ts">timestamp_ms</label>
+          <input id="f-ts" type="number" data-field="timestamp_ms"></div>
+        <div class="field"><label for="f-period">period_seconds</label>
+          <input id="f-period" type="number" data-field="period_seconds"></div>
+      </div>
+      <div class="fields" style="margin-top:14px">
+        <div class="field" style="grid-column:1/-1"><label for="f-local">local_value (64 bytes of pool entropy, hex)</label>
+          <input id="f-local" data-field="local_value" spellcheck="false"></div>
+        <div class="field" style="grid-column:1/-1"><label for="f-prev">prev_output (the link to the pulse before)</label>
+          <input id="f-prev" data-field="prev_output" spellcheck="false"></div>
+        <div class="field" style="grid-column:1/-1"><label for="f-out">output (the hash the draw is derived from)</label>
+          <input id="f-out" data-field="output" spellcheck="false"></div>
+        <div class="field" style="grid-column:1/-1"><label for="f-sig">signature (Ed25519, not covered by the hash)</label>
+          <input id="f-sig" data-field="signature" spellcheck="false"></div>
+      </div>
+      <div class="actions">
+        <button id="go-verify">Verify in this browser</button>
+        <button id="t-entropy" class="danger">Flip one entropy character</button>
+        <button id="t-time" class="danger">Backdate by an hour</button>
+        <button id="t-output" class="danger">Rewrite the winning numbers</button>
+        <button id="t-sig" class="danger">Forge the signature</button>
+        <button id="reset" class="ghost">Reset to published</button>
+      </div>
+      <div class="verdict" id="verdict" data-state="idle">
+        <span class="chip" id="chip">Not yet checked</span>
+        <span class="msg" id="msg">Four independent checks run against this pulse.</span>
+      </div>
+      <ul class="log" id="v-log"><li>Idle &mdash; nothing checked yet.</li></ul>
+    </div>
+
+    <div class="slab"><dl>
+      <dt>Signing key</dt><dd class="beaconval" id="p-key"></dd>
+      <dt>Quantum source</dt><dd id="p-anu"></dd>
+      <dt>Space weather</dt><dd id="p-astro"></dd>
+    </dl></div>
+    <p class="hint">Each pulse records digests of the physical inputs that fed it. The NOAA
+    space-weather readings are public and timestamped, so a sceptic can confirm the pulse
+    was not computed before those measurements existed. They are credited
+    <strong>zero</strong> bits of secret entropy &mdash; they are provenance, not secrecy.</p>
+  </section>
+
+  <!-- ===================== 3. CHAIN ===================== -->
+  <section id="chain">
+    <div class="sechead"><span class="n">03</span><h2>The chain closes the back door</h2></div>
+    <p>One pulse alone proves only that a result follows from it. Each pulse also hashes the
+    one before, so history is a chain. Rewrite round 5 below and the pulse after it stops
+    fitting; repair that one and the break moves to the next. The chain does not make
+    rewriting history impossible &mdash; it makes it impossible to do <em>quietly</em>.</p>
+
+    <div class="panel">
+      <div class="actions" style="margin-top:0">
+        <button id="go-chain">Verify all 10 pulses</button>
+        <button id="break-chain" class="danger">Rewrite round 5</button>
+        <button id="repair-chain" class="danger" disabled>Repair the chain forward</button>
+        <button id="reset-chain" class="ghost">Restore the chain</button>
+      </div>
+      <div class="scroller">
+        <table>
+          <thead><tr><th>Round</th><th>Published</th><th>Output</th><th>Links to</th><th>Status</th></tr></thead>
+          <tbody id="chain-body"></tbody>
+        </table>
+      </div>
+      <div class="verdict" id="chain-verdict" data-state="idle">
+        <span class="chip" id="chain-chip">Not yet checked</span>
+        <span class="msg" id="chain-msg">Each pulse is checked against its own contents, its predecessor, and the signing key.</span>
+      </div>
+    </div>
+  </section>
+
+  <!-- ===================== 4. SO WHAT ===================== -->
+  <section id="why">
+    <div class="sechead"><span class="n">04</span><h2>What this is actually for</h2></div>
+    <p>Not key material. Randomness fetched over a network is randomness someone else could
+    have observed, and your operating system already gives you a better answer for free.
+    Beamline is for the case where the randomness has to be defensible to somebody who
+    assumes you cheated.</p>
+
+    <div class="cols">
+      <div class="card"><h3>Giveaways and raffles</h3>
+        <p>A creator picks three winners from 4,820 entrants and the audience believes it,
+        because they can recompute it themselves.</p></div>
+      <div class="card"><h3>Compliance sampling</h3>
+        <p>An auditor pulls 200 transactions from four million and can show the sample was
+        not chosen to look clean.</p></div>
+      <div class="card"><h3>Allocation and seeding</h3>
+        <p>Limited inventory, product drops, launch slots, tournament brackets &mdash;
+        anywhere the organiser has a favourite.</p></div>
+      <div class="card"><h3>Provably fair games</h3>
+        <p>Commit to a seed hash, let the pulse supply the public entropy, let the player
+        verify the drop.</p></div>
+    </div>
+
+    <p class="note"><strong>The honest limit.</strong> The chain proves ordering and
+    tamper-evidence. It does not, by itself, prove an operator never withheld a pulse it
+    disliked and waited for the next one. Publishing the tag in advance closes that gap on
+    the customer's side; anchoring pulse hashes to an external append-only log closes it on
+    the operator's side, and is on the roadmap. The NIST Randomness Beacon states the same
+    limitation, and naming it is worth more than hiding it.</p>
+  </section>
+
+  <footer>
+    <span>Beamline &mdash; randomness you can prove</span>
+    <span>SHA-512 &middot; Ed25519 &middot; HMAC_DRBG</span>
+    <span><a href="https://github.com/pragyaangaur/Beamline">Source</a></span>
+  </footer>
+</div>
+
+<script id="chain-data" type="application/json">{"public_key":"dd21d3cdb1f0b55cb048d85ec3f4eedf802cb04ed89c4ce8a12e371cfa1d110d","period_seconds":60,"pulses":[{"version":"beamline/pulse/v2","round":1,"timestamp_ms":1787300623434,"period_seconds":60,"prev_output":"00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000","local_value":"ec19d39e517f1f22390f64fe4031d2326e33d5cc37f5c6b3142c85a2272e106c8972ad9bc2a4bc040d31f3183b2ca80d4fac6bd85fef938bc9f78cfe71b1cd01","public_key":"dd21d3cdb1f0b55cb048d85ec3f4eedf802cb04ed89c4ce8a12e371cfa1d110d","provenance":{"local_os":{"at":1787300619.433011,"bytes":64,"digest":"26f6b2a9ece48c760fa4ea86db56ecd166e456ff6c1c4e066a08bcd12adcdf8e","provider":"kernel getrandom(2)"},"anu_qrng":{"at":1787300621.442434,"bytes":1530,"digest":"0c0e2d68d81683c545700f9df3bfb6426bdf2d18332b59cc8a32d703fbbf43f6","provider":"local_archive","blocks":2,"chars":2048,"source_entropy_bits":12241,"remaining_blocks":3994},"astro":{"at":1787300621.847768,"bytes":871,"digest":"25ad154c662091409fafd8206871bf5b8a35bcba890356dc8e2660dbf827413a","feeds":{"goes_xray":{"rows":6,"latest_time_tag":"2026-08-21T08:19:00Z"},"solar_wind_plasma":{"rows":6,"latest_time_tag":"2026-08-20T08:22:00"},"solar_wind_mag":{"rows":6,"latest_time_tag":"2026-08-20T08:22:00"}},"advanced":true}},"output":"1c58c32ec3250d03a46c43d3d53dbe9e7f2baf99fac35dfbfe6c6beea0de3760a8a6750350a16fa584f82bc2eb92de1d7636a7f656600058c8c14f619e81d5a0","signature":"e8b0e807b27bcd2ec04467aea410f26df9ca6ea845b780d2db068f75466ad7c361e69fb653c02d377fa36fae80569679d9cfb8a5310518e826e9399d5537e909"},{"version":"beamline/pulse/v2","round":2,"timestamp_ms":1787300627438,"period_seconds":60,"prev_output":"1c58c32ec3250d03a46c43d3d53dbe9e7f2baf99fac35dfbfe6c6beea0de3760a8a6750350a16fa584f82bc2eb92de1d7636a7f656600058c8c14f619e81d5a0","local_value":"76988303f0c33f97dc3178de149f8df9fb5dfb130f05377595a2c85e9bd4d72d06e43c43c0280112d78680a26d31f764fe6d830735454c053b253c045e99c2f8","public_key":"dd21d3cdb1f0b55cb048d85ec3f4eedf802cb04ed89c4ce8a12e371cfa1d110d","provenance":{"local_os":{"at":1787300624.434439,"bytes":64,"digest":"62056098461e0d1003f93b7fc56aecd1dcd6be3ed65b4d42418a8808b20194ed","provider":"kernel getrandom(2)"},"anu_qrng":{"at":1787300625.457322,"bytes":1530,"digest":"e787a2535807d3c43a8c5eceb643983be7d994e70c13a3155ef6136e3fc5fc61","provider":"local_archive","blocks":2,"chars":2048,"source_entropy_bits":12241,"remaining_blocks":3990},"astro":{"at":1787300621.847768,"bytes":871,"digest":"25ad154c662091409fafd8206871bf5b8a35bcba890356dc8e2660dbf827413a","feeds":{"goes_xray":{"rows":6,"latest_time_tag":"2026-08-21T08:19:00Z"},"solar_wind_plasma":{"rows":6,"latest_time_tag":"2026-08-20T08:22:00"},"solar_wind_mag":{"rows":6,"latest_time_tag":"2026-08-20T08:22:00"}},"advanced":true}},"output":"fa371c8cc074535426d482cf416b0c1f7dd7d4e4068dc5ec9834c7ecb31c9ad7ff221178dc847715db00ea8c173d98db4a76c0279597f73a563078ec346af808","signature":"d8afc1ca2d3b39d722a015805f242e83110ff1e1810a19993b8639ae96385294a25e920cf5b98fba46ac6337f0b3bc94ae233821a071754a26ae2a3edbb4fa09"},{"version":"beamline/pulse/v2","round":3,"timestamp_ms":1787300631441,"period_seconds":60,"prev_output":"fa371c8cc074535426d482cf416b0c1f7dd7d4e4068dc5ec9834c7ecb31c9ad7ff221178dc847715db00ea8c173d98db4a76c0279597f73a563078ec346af808","local_value":"ff4d717acf0074c11fb4ec206acbd3b4f6cd6dc972425bd22bdd842b8cef170fec5b95f23775b9ebb61117a4bfaf3fd6d430230ba74bdff2153c39571b32ff95","public_key":"dd21d3cdb1f0b55cb048d85ec3f4eedf802cb04ed89c4ce8a12e371cfa1d110d","provenance":{"local_os":{"at":1787300629.435134,"bytes":64,"digest":"e814ad48dc4d33019ca65525d330269cbe398b1f39752d77237e08a7a0e7e68c","provider":"kernel getrandom(2)"},"anu_qrng":{"at":1787300629.471243,"bytes":1530,"digest":"08b5f1dafe2021155fbc5af98807504d991c9d24a450ccde540628039301ae64","provider":"local_archive","blocks":2,"chars":2048,"source_entropy_bits":12241,"remaining_blocks":3986},"astro":{"at":1787300621.847768,"bytes":871,"digest":"25ad154c662091409fafd8206871bf5b8a35bcba890356dc8e2660dbf827413a","feeds":{"goes_xray":{"rows":6,"latest_time_tag":"2026-08-21T08:19:00Z"},"solar_wind_plasma":{"rows":6,"latest_time_tag":"2026-08-20T08:22:00"},"solar_wind_mag":{"rows":6,"latest_time_tag":"2026-08-20T08:22:00"}},"advanced":true}},"output":"b43c6884ff3c3d95ff0dfc51cb80280a019acabf39593dc75b6b7639f92d754c1b2a9d9aa679033037db2007490cb10c92a75cc33e01e407738878c0bcda5725","signature":"5b17056f81c24aa40e7b7b92cb6161d6b9e40b9461a98d024f8dcc6d5d3809972bba3268caaee4ead38dac50597215b36139f5fc1f9e6c7f9622ba2396fcc00a"},{"version":"beamline/pulse/v2","round":4,"timestamp_ms":1787300635443,"period_seconds":60,"prev_output":"b43c6884ff3c3d95ff0dfc51cb80280a019acabf39593dc75b6b7639f92d754c1b2a9d9aa679033037db2007490cb10c92a75cc33e01e407738878c0bcda5725","local_value":"235dd292ee23c8f620c76d5b2704f309630cc11e76ee287cf542907d81396463e5ac1c677226c011198c690cdf1d38a324a82a00dc96092ab4f97c462b47b768","public_key":"dd21d3cdb1f0b55cb048d85ec3f4eedf802cb04ed89c4ce8a12e371cfa1d110d","provenance":{"local_os":{"at":1787300634.436637,"bytes":64,"digest":"2370291d0065207f3bab4553c10a9b8a5955376ff4e4a40318c27cb3432430ea","provider":"kernel getrandom(2)"},"anu_qrng":{"at":1787300633.48613,"bytes":1530,"digest":"283f5b4c57f91b0c4b8a7c1080fe82fcc9bea1824ec1641913adfeec184efce0","provider":"local_archive","blocks":2,"chars":2048,"source_entropy_bits":12241,"remaining_blocks":3982},"astro":{"at":1787300621.847768,"bytes":871,"digest":"25ad154c662091409fafd8206871bf5b8a35bcba890356dc8e2660dbf827413a","feeds":{"goes_xray":{"rows":6,"latest_time_tag":"2026-08-21T08:19:00Z"},"solar_wind_plasma":{"rows":6,"latest_time_tag":"2026-08-20T08:22:00"},"solar_wind_mag":{"rows":6,"latest_time_tag":"2026-08-20T08:22:00"}},"advanced":true}},"output":"094348732cafffef709f924d972e560af9ec0182fc87afc45310db31f0992bee7bffb0afe85ea6575036a1cc95f8a610059522a35b05c04a5a278e11c33f6eee","signature":"909d3b8f2be2560b0463d332c0bd3146879ef626f2f3b8bca7cf885561a16880c186158007e4a3e96fcc1be4b0b2b7251cd940b820b89d323ee1b6d7a831ef01"},{"version":"beamline/pulse/v2","round":5,"timestamp_ms":1787300639446,"period_seconds":60,"prev_output":"094348732cafffef709f924d972e560af9ec0182fc87afc45310db31f0992bee7bffb0afe85ea6575036a1cc95f8a610059522a35b05c04a5a278e11c33f6eee","local_value":"09618a356fc44e3f1bf5d12a091ede808a9cb8696b2115ed2e287d4d2267a73c795ccf0570217fff05db47d46fe8fc0ac2eb62f521595f926b3666c8ab574277","public_key":"dd21d3cdb1f0b55cb048d85ec3f4eedf802cb04ed89c4ce8a12e371cfa1d110d","provenance":{"local_os":{"at":1787300639.438169,"bytes":64,"digest":"70848781194ac3b3cdbe58f4e265a4923f809d6975a3489abe51d6cebf8d05f0","provider":"kernel getrandom(2)"},"anu_qrng":{"at":1787300637.501589,"bytes":1530,"digest":"3c31f32096d619d4dd80a92c511f5cda00360f98fd5188954ce54f06b6d77685","provider":"local_archive","blocks":2,"chars":2048,"source_entropy_bits":12241,"remaining_blocks":3978},"astro":{"at":1787300621.847768,"bytes":871,"digest":"25ad154c662091409fafd8206871bf5b8a35bcba890356dc8e2660dbf827413a","feeds":{"goes_xray":{"rows":6,"latest_time_tag":"2026-08-21T08:19:00Z"},"solar_wind_plasma":{"rows":6,"latest_time_tag":"2026-08-20T08:22:00"},"solar_wind_mag":{"rows":6,"latest_time_tag":"2026-08-20T08:22:00"}},"advanced":true}},"output":"c3bf8e727bdfdf85af8895863b04218366901542915859d35fd2e1f518131c3073cd201a4217605d7c1d910857551010c2323c6f28287c93864929c4a7904e2a","signature":"7d16f1dd9c401a03ce17e021e07b1fe4881a6e8fbf96e176b05101d3bac0654238fd22b0f8f9499e2456be50a0cb3f4e784a2b37e2ee0a3911a48de112b28302"},{"version":"beamline/pulse/v2","round":6,"timestamp_ms":1787300640001,"period_seconds":60,"prev_output":"c3bf8e727bdfdf85af8895863b04218366901542915859d35fd2e1f518131c3073cd201a4217605d7c1d910857551010c2323c6f28287c93864929c4a7904e2a","local_value":"3e6fe1476904259f0da346ecf49135e97ef6e7bc72f5cd3236e058e684924760d326470691c1ff7d8b0dd7129f707213e59becb569cbeda10b2934ac34bd30b8","public_key":"dd21d3cdb1f0b55cb048d85ec3f4eedf802cb04ed89c4ce8a12e371cfa1d110d","provenance":{"local_os":{"at":1787300639.438169,"bytes":64,"digest":"70848781194ac3b3cdbe58f4e265a4923f809d6975a3489abe51d6cebf8d05f0","provider":"kernel getrandom(2)"},"anu_qrng":{"at":1787300639.510695,"bytes":1530,"digest":"04a5e46a6d052f2a8eb6e90407d9a5e5eebecd598a46d2c9d15f7be6255cc190","provider":"local_archive","blocks":2,"chars":2048,"source_entropy_bits":12241,"remaining_blocks":3976},"astro":{"at":1787300621.847768,"bytes":871,"digest":"25ad154c662091409fafd8206871bf5b8a35bcba890356dc8e2660dbf827413a","feeds":{"goes_xray":{"rows":6,"latest_time_tag":"2026-08-21T08:19:00Z"},"solar_wind_plasma":{"rows":6,"latest_time_tag":"2026-08-20T08:22:00"},"solar_wind_mag":{"rows":6,"latest_time_tag":"2026-08-20T08:22:00"}},"advanced":true}},"output":"7f9a637e05b6d89cfb1cbb223e37ba1367107191a42383a2e0ed91a06506af9969368fa7d5bf86f495d97d16ad4ffd1b624797c689de34f416a737e5df65c47a","signature":"a6f9346b327340a6dc315515f6318a33ed5e232c8bff4251f0bfd1a6d165d5964cb8bf4f1aa72b26efcb875f1c657560fe2219e83e4c80894513df19c7868d04"},{"version":"beamline/pulse/v2","round":7,"timestamp_ms":1787300643449,"period_seconds":60,"prev_output":"7f9a637e05b6d89cfb1cbb223e37ba1367107191a42383a2e0ed91a06506af9969368fa7d5bf86f495d97d16ad4ffd1b624797c689de34f416a737e5df65c47a","local_value":"b7b505fc4cbd5555a4190e5aea0b9c25a6dc54dabe018b61a79af417c4f1782e260984c2ec4aecde214a25bcfb895f37ee64f8397672faf3a57643e0f14201d1","public_key":"dd21d3cdb1f0b55cb048d85ec3f4eedf802cb04ed89c4ce8a12e371cfa1d110d","provenance":{"local_os":{"at":1787300639.438169,"bytes":64,"digest":"70848781194ac3b3cdbe58f4e265a4923f809d6975a3489abe51d6cebf8d05f0","provider":"kernel getrandom(2)"},"anu_qrng":{"at":1787300641.51844,"bytes":1530,"digest":"55e2b0128b031408566da47f7e030cb492b3b425bdb68f787f1ae75ea8963e26","provider":"local_archive","blocks":2,"chars":2048,"source_entropy_bits":12241,"remaining_blocks":3974},"astro":{"at":1787300621.847768,"bytes":871,"digest":"25ad154c662091409fafd8206871bf5b8a35bcba890356dc8e2660dbf827413a","feeds":{"goes_xray":{"rows":6,"latest_time_tag":"2026-08-21T08:19:00Z"},"solar_wind_plasma":{"rows":6,"latest_time_tag":"2026-08-20T08:22:00"},"solar_wind_mag":{"rows":6,"latest_time_tag":"2026-08-20T08:22:00"}},"advanced":true}},"output":"e3fbb186111eaddc46ae9509d06fb55ef3e1242b312c153ed702668396143c7ad13144c7cdf72c0e7ecedfeebc63d1c18d775d27de06bcfdfe896da98259fb89","signature":"a3f885129a1d09868643f89b60830ffd415b8b3aac68ef05d7ef724728d95e21abe31d6cb83e726a2411af3ad54d9455b42121cbca7e04a20036e38587447304"},{"version":"beamline/pulse/v2","round":8,"timestamp_ms":1787300647451,"period_seconds":60,"prev_output":"e3fbb186111eaddc46ae9509d06fb55ef3e1242b312c153ed702668396143c7ad13144c7cdf72c0e7ecedfeebc63d1c18d775d27de06bcfdfe896da98259fb89","local_value":"54f257e2f8350ab19e029d7936d94f9669b31c66c6dc9b743824aae40db306859bbaadce06ecbf5c54582e1ebd3974d720fe8bc8392ef16873283fafd36f3623","public_key":"dd21d3cdb1f0b55cb048d85ec3f4eedf802cb04ed89c4ce8a12e371cfa1d110d","provenance":{"local_os":{"at":1787300644.439641,"bytes":64,"digest":"d705a91f5f8815d26de07b5f7ce1c366fba64ae364a7ec21cff28d2660f774aa","provider":"kernel getrandom(2)"},"anu_qrng":{"at":1787300645.532953,"bytes":1530,"digest":"0d03eb8f20f5f12cb5b82015c9e4d7bf7869715aca8dda72fe6abbe19b2b86ac","provider":"local_archive","blocks":2,"chars":2048,"source_entropy_bits":12241,"remaining_blocks":3970},"astro":{"at":1787300621.847768,"bytes":871,"digest":"25ad154c662091409fafd8206871bf5b8a35bcba890356dc8e2660dbf827413a","feeds":{"goes_xray":{"rows":6,"latest_time_tag":"2026-08-21T08:19:00Z"},"solar_wind_plasma":{"rows":6,"latest_time_tag":"2026-08-20T08:22:00"},"solar_wind_mag":{"rows":6,"latest_time_tag":"2026-08-20T08:22:00"}},"advanced":true}},"output":"dd79410598c5324fd1b065740fc087c48ab52d3f040febd0b36dee3a224853ddd916e0c17d868fa6ee4b5591372924537c76e0b85e0b2762ad18382d9932bb62","signature":"c6d62ba1c22d29ed1030db65b6099baa8bd33fe2fc25a2fb1b10978554147f4e4e1da1837efeb64c7b4618adb3ca36fe1077adf7cd7b0eaface49641439d0e05"},{"version":"beamline/pulse/v2","round":9,"timestamp_ms":1787300651454,"period_seconds":60,"prev_output":"dd79410598c5324fd1b065740fc087c48ab52d3f040febd0b36dee3a224853ddd916e0c17d868fa6ee4b5591372924537c76e0b85e0b2762ad18382d9932bb62","local_value":"45c8659e3593c8b511a2fc1a11b515975aeb10f2be5e9101505a318b78fcdc4b55906aea1d9ed7946d78550bddd9008809d7a998738b6e0357c1bacafab62d59","public_key":"dd21d3cdb1f0b55cb048d85ec3f4eedf802cb04ed89c4ce8a12e371cfa1d110d","provenance":{"local_os":{"at":1787300649.4414961,"bytes":64,"digest":"4f2a2b6773042ffe5821b573683f1de2a1672e83f5bfcea86c0122b91e23ee3e","provider":"kernel getrandom(2)"},"anu_qrng":{"at":1787300649.549483,"bytes":1530,"digest":"36858c3f1b1daf44abf8952f9f08cbf8827069a71749ac459272cf377542f346","provider":"local_archive","blocks":2,"chars":2048,"source_entropy_bits":12241,"remaining_blocks":3966},"astro":{"at":1787300621.847768,"bytes":871,"digest":"25ad154c662091409fafd8206871bf5b8a35bcba890356dc8e2660dbf827413a","feeds":{"goes_xray":{"rows":6,"latest_time_tag":"2026-08-21T08:19:00Z"},"solar_wind_plasma":{"rows":6,"latest_time_tag":"2026-08-20T08:22:00"},"solar_wind_mag":{"rows":6,"latest_time_tag":"2026-08-20T08:22:00"}},"advanced":true}},"output":"c235981e15be9df2b77423fb4c73de86752947eb4640f1bdb902e332994b7e52deaa48bfe37f17860be0a18d8a1763c1c8007d6d7a367c20a582bd54f02acf3f","signature":"1f12de8ab173b7bd3be07df5fcc210decd33da549f05cb52d98d61c38ae9ed5eee14629e1f5aaace358d8e818cf99d7f0b11f5fb25ef8af95bb97cc8dc64cd0f"},{"version":"beamline/pulse/v2","round":10,"timestamp_ms":1787300655457,"period_seconds":60,"prev_output":"c235981e15be9df2b77423fb4c73de86752947eb4640f1bdb902e332994b7e52deaa48bfe37f17860be0a18d8a1763c1c8007d6d7a367c20a582bd54f02acf3f","local_value":"96b1e703bbaab6e7be203f275ea5b4822878b89f4210a7965ca572a6db44b9822be5f0596de837ca02ee0f999fdf9d10517ab80d7906a01a503c403a981c7b87","public_key":"dd21d3cdb1f0b55cb048d85ec3f4eedf802cb04ed89c4ce8a12e371cfa1d110d","provenance":{"local_os":{"at":1787300654.442973,"bytes":64,"digest":"66ac356a58c75e0e4043a801bce27bcdbb033a59775dd885aa77c27260b235a7","provider":"kernel getrandom(2)"},"anu_qrng":{"at":1787300653.56209,"bytes":1530,"digest":"c0649316053117ecee9266563a67ba02333301848b51ee465a566884c6bc92ac","provider":"local_archive","blocks":2,"chars":2048,"source_entropy_bits":12241,"remaining_blocks":3962},"astro":{"at":1787300621.847768,"bytes":871,"digest":"25ad154c662091409fafd8206871bf5b8a35bcba890356dc8e2660dbf827413a","feeds":{"goes_xray":{"rows":6,"latest_time_tag":"2026-08-21T08:19:00Z"},"solar_wind_plasma":{"rows":6,"latest_time_tag":"2026-08-20T08:22:00"},"solar_wind_mag":{"rows":6,"latest_time_tag":"2026-08-20T08:22:00"}},"advanced":true}},"output":"f9f6303d83ac1032ef868f5cf35f338d6930b130349725180166671945f1918c17dcb8fd538750afdc1253d72b762af834fbfc33c5b82e1df0ab54366a813747","signature":"c56dfb892d6c69cf1fd670d02282c25b34712adae78f2d8e5882917207bb741cc82679cf2b8a2cf3819e82c889d5fb92da72c75cd8a41d14ede9111a156f4e08"}]}</script>
+<script>
+"use strict";
+/* ------------------------------------------------------------------ *
+ * A standalone verifier. It shares no code with the Beamline server:
+ * everything below reimplements the published pulse and derivation
+ * spec from scratch, which is the only kind of verifier worth having.
+ * ------------------------------------------------------------------ */
+
+const DATA = JSON.parse(document.getElementById("chain-data").textContent);
+const PUBLISHED = DATA.pulses;                       // never mutated
+const PUBKEY = DATA.public_key;
+const $ = (id) => document.getElementById(id);
+const enc = new TextEncoder();
+
+/* working copies -- what the page verifies, and what the tamper buttons edit */
+let working = structuredClone(PUBLISHED);
+let current = working[working.length - 1];           // the pulse under the microscope
+
+/* ---------- byte plumbing ---------- */
+const hex = (b) => Array.from(b, (x) => x.toString(16).padStart(2, "0")).join("");
+const hexToBytes = (h) => {
+  const clean = String(h).trim();
+  const o = new Uint8Array(Math.floor(clean.length / 2));
+  for (let i = 0; i < o.length; i++) o[i] = parseInt(clean.substr(i * 2, 2), 16);
+  return o;
+};
+const cat = (...a) => {
+  const o = new Uint8Array(a.reduce((s, x) => s + x.length, 0));
+  let k = 0; for (const x of a) { o.set(x, k); k += x.length; }
+  return o;
+};
+const u32 = (n) => new Uint8Array([(n >>> 24) & 255, (n >>> 16) & 255, (n >>> 8) & 255, n & 255]);
+const sha512 = async (b) => new Uint8Array(await crypto.subtle.digest("SHA-512", b));
+
+/* ---------- canonical serialisation ----------
+   Sorted keys, no whitespace. This must match the server byte for byte or the
+   output hash will not reproduce -- which is exactly why timestamp_ms is an
+   integer: a float serialises as 1787150090.0 in Python and 1787150090 in
+   JavaScript, and the two would silently disagree. */
+function stable(v) {
+  if (v === null || typeof v !== "object") return JSON.stringify(v);
+  if (Array.isArray(v)) return "[" + v.map(stable).join(",") + "]";
+  return "{" + Object.keys(v).sort()
+    .map((k) => JSON.stringify(k) + ":" + stable(v[k])).join(",") + "}";
+}
+function canonical(p) {
+  return enc.encode(stable({
+    local_value: p.local_value, period_seconds: p.period_seconds,
+    prev_output: p.prev_output, public_key: p.public_key ?? null,
+    provenance: p.provenance, round: p.round,
+    timestamp_ms: p.timestamp_ms, version: p.version,
+  }));
+}
+const recomputeOutput = async (p) =>
+  hex(await sha512(cat(enc.encode(p.version), enc.encode("|"), canonical(p))));
+
+/* ---------- the derived byte stream ---------- */
+class Stream {
+  constructor(outputHex, tag) {
+    this.base = hexToBytes(outputHex); this.tag = tag;
+    this.buf = new Uint8Array(0); this.pos = 0; this.chunk = 0;
+  }
+  async grow() {
+    this.chunk += 1;
+    const pre = cat(enc.encode("beamline/derive/v1"), this.base,
+                    enc.encode(this.tag + "#" + this.chunk));
+    const parts = []; let made = 0;
+    for (let j = 0; made < 4096; j++) { const d = await sha512(cat(pre, u32(j))); parts.push(d); made += d.length; }
+    this.buf = cat(this.buf, cat(...parts).slice(0, 4096));
+  }
+  async take(n) {
+    while (this.pos + n > this.buf.length) await this.grow();
+    const o = this.buf.slice(this.pos, this.pos + n); this.pos += n; return o;
+  }
+}
+
+/* Uniform integer in [0, span) by rejection sampling. Modulo would bias the draw,
+   and a lottery entrant is precisely the person who would notice. */
+async function bounded(s, span) {
+  if (span <= 1) return 0;
+  const bits = BigInt(span - 1).toString(2).length;
+  const nb = Math.ceil(bits / 8);
+  const mask = (1n << BigInt(bits)) - 1n;
+  for (;;) {
+    const b = await s.take(nb);
+    let v = 0n; for (const x of b) v = (v << 8n) | BigInt(x);
+    v &= mask;
+    if (v < BigInt(span)) return Number(v);
+  }
+}
+
+/* Distinct winners, mirroring the server's two strategies: partial Fisher-Yates
+   when the range is dense relative to the draw, draw-and-reject when it is sparse. */
+async function sampleIndices(s, span, count) {
+  if (span <= 4 * count || span <= 4096) {
+    const pool = Array.from({ length: span }, (_, i) => i);
+    for (let i = 0; i < count; i++) {
+      const j = i + await bounded(s, span - i);
+      [pool[i], pool[j]] = [pool[j], pool[i]];
+    }
+    return pool.slice(0, count);
+  }
+  const seen = new Set(); const out = [];
+  while (out.length < count) {
+    const v = await bounded(s, span);
+    if (!seen.has(v)) { seen.add(v); out.push(v); }
+  }
+  return out;
+}
+
+async function drawWinners(outputHex, tag, count, min, max) {
+  const s = new Stream(outputHex, tag);
+  const span = max - min + 1;
+  return (await sampleIndices(s, span, count)).map((v) => v + min);
+}
+
+/* ---------- small DOM helpers ---------- */
+function logTo(el, text, cls) {
+  const li = document.createElement("li");
+  li.textContent = text; if (cls) li.className = cls;
+  el.appendChild(li);
+}
+const clear = (el) => { el.innerHTML = ""; };
+const utc = (ms) => new Date(ms).toISOString().replace("T", " ").slice(0, 19) + " UTC";
+function setVerdict(node, chipEl, msgEl, state, chipText, msgText) {
+  node.dataset.state = state; chipEl.textContent = chipText; msgEl.textContent = msgText;
+}
+
+/* ================================================================== *
+ * 1. The draw
+ * ================================================================== */
+let lastDraw = null;
+
+function drawParams() {
+  const entrants = Math.max(1, Math.min(10000000, parseInt($("entrants").value, 10) || 1));
+  let count = Math.max(1, Math.min(50, parseInt($("count").value, 10) || 1));
+  if (count > entrants) count = entrants;
+  return { tag: $("tag").value || "untitled-draw", entrants, count,
+           round: parseInt($("round").value, 10) };
+}
+
+async function runDraw(opts = {}) {
+  const p = drawParams();
+  const pulse = working.find((x) => x.round === p.round);
+  const log = $("draw-log");
+  clear(log);
+  $("go-draw").disabled = true;
+
+  logTo(log, `Tag "${p.tag}" pinned to pulse #${pulse.round}, published ${utc(pulse.timestamp_ms)}.`, "run");
+  logTo(log, `Expanding SHA-512("beamline/derive/v1" | pulse output | "${p.tag}#1" | counter)...`, "run");
+
+  const winners = await drawWinners(pulse.output, p.tag, p.count, 1, p.entrants);
+  const repeat = lastDraw && lastDraw.key === `${p.tag}|${p.round}|${p.entrants}|${p.count}`;
+
+  $("winners").innerHTML = winners.map((w, i) =>
+    `<div class="winner${opts.flash ? " changed" : ""}"><div class="lbl">Winner ${i + 1}</div>
+     <div class="num">#${w.toLocaleString()}</div></div>`).join("");
+  $("draw-hint").textContent =
+    `${p.count} of ${p.entrants.toLocaleString()} entrants, no repeats, in draw order.`;
+
+  logTo(log, `Result: [${winners.join(", ")}]`, "ok");
+  if (repeat) {
+    const identical = JSON.stringify(winners) === JSON.stringify(lastDraw.winners);
+    logTo(log, identical
+      ? "Identical to the previous run. The pulse is fixed, so the draw is too -- and will be, forever."
+      : "Unexpected: same inputs produced a different result.", identical ? "ok" : "bad");
+  } else if (lastDraw) {
+    logTo(log, "Different inputs, unrelated result. Nothing about the tag steers the outcome.", "ok");
+  }
+  logTo(log, "Derived in this browser from the published pulse alone. No server was contacted.", "ok");
+
+  lastDraw = { key: `${p.tag}|${p.round}|${p.entrants}|${p.count}`, winners };
+  $("go-draw").disabled = false;
+  $("go-draw").textContent = "Run the draw";
+}
+
+/* ================================================================== *
+ * 2. Verifying one pulse
+ * ================================================================== */
+const FIELDS = ["round", "timestamp_ms", "period_seconds", "local_value", "prev_output",
+                "output", "signature"];
+
+function fillFields() {
+  $("p-round-label").textContent = "#" + current.round;
+  for (const f of FIELDS) {
+    const input = document.querySelector(`input[data-field="${f}"]`);
+    input.value = current[f] ?? "";
+    input.classList.toggle("bad", JSON.stringify(current[f]) !==
+      JSON.stringify(PUBLISHED.find((x) => x.round === current.round)[f]));
+  }
+  $("p-key").textContent = current.public_key || "unsigned";
+  const anu = current.provenance.anu_qrng;
+  $("p-anu").textContent = anu
+    ? `ANU vacuum-fluctuation QRNG -- ${anu.bytes} bytes, digest ${anu.digest.slice(0, 24)}...`
+    : "not recorded";
+  const feeds = current.provenance.astro && current.provenance.astro.feeds;
+  $("p-astro").textContent = feeds
+    ? Object.entries(feeds).map(([k, v]) => `${k} @ ${(v.latest_time_tag || "?").replace("T", " ").replace("Z", "")}`).join("  |  ")
+    : "not recorded";
+}
+
+function readFields() {
+  for (const f of FIELDS) {
+    const input = document.querySelector(`input[data-field="${f}"]`);
+    const raw = input.value.trim();
+    current[f] = (f === "round" || f === "timestamp_ms" || f === "period_seconds")
+      ? (parseInt(raw, 10) || 0) : raw;
+  }
+}
+
+async function verifyPulse() {
+  readFields();
+  const log = $("v-log"); clear(log);
+  $("go-verify").disabled = true;
+  setVerdict($("verdict"), $("chip"), $("msg"), "idle", "Checking", "Recomputing from the pulse contents...");
+
+  let ok = true;
+  const published = PUBLISHED.find((x) => x.round === current.round);
+
+  /* (1) does the pulse hash its own contents? */
+  logTo(log, "1/4  Recomputing the pulse output hash from its contents...", "run");
+  const recomputed = await recomputeOutput(current);
+  if (recomputed === current.output) {
+    logTo(log, "Output hash matches. Nothing inside this pulse has been altered.", "ok");
+  } else {
+    ok = false;
+    logTo(log, `Output hash MISMATCH. Recomputed ${recomputed.slice(0, 32)}... but the pulse claims ${current.output.slice(0, 32)}...`, "bad");
+    logTo(log, "Some field below was edited. There is no way to make the hash agree again without the whole pulse changing.", "bad");
+  }
+
+  /* (2) does it link to the pulse before it? */
+  const prev = working.find((x) => x.round === current.round - 1);
+  logTo(log, "2/4  Checking the link to the previous pulse...", "run");
+  if (!prev) {
+    logTo(log, "No predecessor loaded; chain link not checked for this round.");
+  } else if (current.prev_output === prev.output) {
+    logTo(log, `Links correctly to round ${prev.round}.`, "ok");
+  } else {
+    ok = false;
+    logTo(log, `Broken link: this pulse does not follow round ${prev.round}.`, "bad");
+  }
+
+  /* (3) the signature, checked against the key the pulse itself declares --
+         that key is inside the signed body, so it cannot be swapped quietly. */
+  logTo(log, "3/4  Checking the Ed25519 signature...", "run");
+  try {
+    const key = await crypto.subtle.importKey("raw", hexToBytes(current.public_key),
+      { name: "Ed25519" }, false, ["verify"]);
+    const good = current.signature && current.signature.length === 128 &&
+      await crypto.subtle.verify("Ed25519", key, hexToBytes(current.signature), canonical(current));
+    if (good && current.public_key === PUBKEY) {
+      logTo(log, "Signature valid under Beamline's published key.", "ok");
+    } else if (good) {
+      ok = false;
+      logTo(log, "Signature is valid, but under a key Beamline never published.", "bad");
+    } else {
+      ok = false;
+      logTo(log, "Signature INVALID. This pulse was not signed by Beamline in this form.", "bad");
+    }
+  } catch (e) {
+    logTo(log, "This browser cannot check Ed25519 (needs a recent Chrome, Safari or Firefox). The other three checks still ran.");
+  }
+
+  /* (4) does the draw above still follow from this record?
+         Derived from the output field as it now stands, because that is the value a
+         forged record would be offering as the source of its numbers. */
+  const p = drawParams();
+  logTo(log, "4/4  Re-deriving the draw above from this pulse...", "run");
+  const winners = await drawWinners(current.output, p.tag, p.count, 1, p.entrants);
+  const matches = lastDraw && JSON.stringify(winners) === JSON.stringify(lastDraw.winners);
+  if (!lastDraw) {
+    logTo(log, "No draw has been run yet -- run one above to see this check bite.");
+  } else if (matches && ok) {
+    logTo(log, `Winners still reproduce: [${winners.join(", ")}]`, "ok");
+  } else if (matches) {
+    logTo(log, "The winners are unchanged: this edit did not move the draw, it only "
+             + "destroyed the record's integrity. Moving the draw means changing the "
+             + "output hash -- which check 1 catches just as loudly.");
+  } else {
+    logTo(log, `Different winners: this record now yields [${winners.join(", ")}]`, "bad");
+    logTo(log, "So the numbers can be changed -- and the change is visible to anyone "
+             + "who runs these four checks, which is the whole point.", "bad");
+  }
+
+  const edited = FIELDS.some((f) => JSON.stringify(current[f]) !== JSON.stringify(published[f]));
+  setVerdict($("verdict"), $("chip"), $("msg"),
+    ok ? "ok" : "bad",
+    ok ? "Verified" : "Failed",
+    ok ? "Recomputed independently in this browser. This pulse is genuine and the draw follows from it."
+       : edited ? "Exactly what a tampered record looks like from the outside. The edit is detectable by anyone, with no access to Beamline."
+                : "This record does not check out.");
+  $("go-verify").disabled = false;
+  $("go-verify").textContent = "Check again";
+  fillFields();
+  renderChain();
+}
+
+/* ---------- tamper buttons ---------- */
+function tamperEntropy() {
+  readFields();
+  const i = 17;                                   // an arbitrary nibble, deep in the value
+  const c = current.local_value[i];
+  const flipped = ((parseInt(c, 16) + 1) % 16).toString(16);
+  current.local_value = current.local_value.slice(0, i) + flipped + current.local_value.slice(i + 1);
+  fillFields();
+  verifyPulse();
+}
+function tamperTime() {
+  readFields();
+  current.timestamp_ms -= 3600000;
+  fillFields();
+  verifyPulse();
+}
+function tamperOutput() {
+  readFields();
+  // What an operator who wanted different winners would actually have to do: swap the
+  // hash the draw is derived from. It works -- and check 1 sees it instantly.
+  current.output = hex(crypto.getRandomValues(new Uint8Array(64)));
+  fillFields();
+  verifyPulse();
+}
+function tamperSig() {
+  readFields();
+  current.signature = hex(crypto.getRandomValues(new Uint8Array(64)));
+  fillFields();
+  verifyPulse();
+}
+function resetPulse() {
+  const fresh = structuredClone(PUBLISHED.find((x) => x.round === current.round));
+  const idx = working.findIndex((x) => x.round === current.round);
+  working[idx] = fresh; current = fresh;
+  fillFields(); renderChain();
+  clear($("v-log"));
+  logTo($("v-log"), "Restored to the published pulse. Run the check again.");
+  setVerdict($("verdict"), $("chip"), $("msg"), "idle", "Not yet checked",
+    "Four independent checks run against this pulse.");
+}
+
+/* ================================================================== *
+ * 3. The chain
+ * ================================================================== */
+let chainStatus = {};        // round -> {state, label}
+let rewritten = false;       // has the visitor rewritten round 5?
+
+function renderChain() {
+  $("chain-body").innerHTML = working.map((p) => {
+    const published = PUBLISHED.find((x) => x.round === p.round);
+    const edited = JSON.stringify(p) !== JSON.stringify(published);
+    const s = chainStatus[p.round] || { state: "idle", label: "unchecked" };
+    const st = s.state, label = s.label;
+    return `<tr class="${st === "bad" ? "broken" : ""}${edited ? " edited" : ""}">
+      <td>#${p.round}</td>
+      <td>${utc(p.timestamp_ms)}</td>
+      <td class="hash">${p.output.slice(0, 16)}...</td>
+      <td class="hash">${p.round === 1 ? "genesis" : "#" + (p.round - 1) + " " + p.prev_output.slice(0, 10) + "..."}</td>
+      <td><span class="state ${st}">${label}</span></td>
+    </tr>`;
+  }).join("");
+}
+
+/* Three checks per pulse, in the order a sceptic would apply them: does it hash its own
+   contents, does it fit where it claims to sit, and did Beamline sign it. */
+async function checkOne(p, prev) {
+  if ((await recomputeOutput(p)) !== p.output) return { state: "bad", label: "contents edited" };
+  if (prev && (p.prev_output !== prev.output || p.round !== prev.round + 1)) {
+    return { state: "bad", label: "broken link" };
+  }
+  try {
+    const key = await crypto.subtle.importKey("raw", hexToBytes(p.public_key),
+      { name: "Ed25519" }, false, ["verify"]);
+    const good = p.signature && p.signature.length === 128 &&
+      await crypto.subtle.verify("Ed25519", key, hexToBytes(p.signature), canonical(p));
+    if (!good) return { state: "bad", label: "bad signature" };
+  } catch (e) {
+    return { state: "ok", label: "hash + link only" };   // no Ed25519 in this browser
+  }
+  return { state: "ok", label: "verified" };
+}
+
+async function verifyChain() {
+  $("go-chain").disabled = true;
+  chainStatus = {};
+  const ordered = [...working].sort((a, b) => a.round - b.round);
+  const bad = [];
+
+  for (let i = 0; i < ordered.length; i++) {
+    const r = await checkOne(ordered[i], i ? ordered[i - 1] : null);
+    chainStatus[ordered[i].round] = r;
+    if (r.state === "bad") bad.push({ round: ordered[i].round, why: r.label });
+    renderChain();
+  }
+
+  const signaturesOnly = bad.length && bad.every((b) => b.why === "bad signature");
+  setVerdict($("chain-verdict"), $("chain-chip"), $("chain-msg"),
+    bad.length ? "bad" : "ok",
+    bad.length ? `${bad.length} of ${ordered.length} broken` : `All ${ordered.length} verified`,
+    !bad.length
+      ? "Every pulse hashes its own contents, links to the one before it, and carries a "
+        + "valid Beamline signature."
+      : signaturesOnly
+      ? `The history is now internally consistent again -- and ${bad.length} pulses no `
+        + "longer carry a valid signature. Rewriting the chain is arithmetic anyone can do. "
+        + "Re-signing it needs the private key, which is the one thing a forger does not have."
+      : `Round ${bad[0].round}: ${bad[0].why}. Repairing it means rewriting the pulse after `
+        + "it too, and the one after that -- all the way to the head of the chain.");
+  $("go-chain").disabled = false;
+  $("go-chain").textContent = "Verify again";
+}
+
+/* What an operator rewriting history actually does: change the contents and recompute
+   that pulse's own hash, so it is at least self-consistent. The break moves to its
+   successor, which still points at the hash the pulse used to have. */
+function breakChain() {
+  const target = working.find((x) => x.round === 5) || working[Math.floor(working.length / 2)];
+  const i = 9;
+  target.local_value = target.local_value.slice(0, i) +
+    ((parseInt(target.local_value[i], 16) + 7) % 16).toString(16) +
+    target.local_value.slice(i + 1);
+  recomputeOutput(target).then((h) => {
+    target.output = h;
+    rewritten = true;
+    $("repair-chain").disabled = false;
+    if (current.round === target.round) { current = target; fillFields(); }
+    verifyChain();
+  });
+}
+
+/* Re-link and re-hash every pulse after the rewritten one. The chain becomes consistent;
+   the signatures do not come back. */
+async function repairChain() {
+  $("repair-chain").disabled = true;
+  const ordered = [...working].sort((a, b) => a.round - b.round);
+  const from = ordered.findIndex((p) => chainStatus[p.round] &&
+    chainStatus[p.round].label === "broken link");
+  for (let i = Math.max(1, from); i < ordered.length; i++) {
+    ordered[i].prev_output = ordered[i - 1].output;
+    ordered[i].output = await recomputeOutput(ordered[i]);
+  }
+  if (current) { current = working.find((x) => x.round === current.round); fillFields(); }
+  await verifyChain();
+}
+
+function resetChain() {
+  working = structuredClone(PUBLISHED);
+  current = working.find((x) => x.round === current.round) || working[working.length - 1];
+  chainStatus = {}; rewritten = false;
+  $("repair-chain").disabled = true;
+  fillFields(); renderChain();
+  setVerdict($("chain-verdict"), $("chain-chip"), $("chain-msg"), "idle", "Not yet checked",
+    "Each pulse is checked against its own contents, its predecessor, and the signing key.");
+}
+
+/* ================================================================== *
+ * wiring
+ * ================================================================== */
+$("round").innerHTML = working.map((p) =>
+  `<option value="${p.round}">#${p.round} -- ${utc(p.timestamp_ms).slice(11)}</option>`).join("");
+$("round").value = String(current.round);
+
+$("go-draw").addEventListener("click", () => runDraw({ flash: true }));
+$("again").addEventListener("click", () => runDraw());
+$("nudge").addEventListener("click", () => {
+  const t = $("tag").value;
+  const last = t.slice(-1);
+  $("tag").value = /[0-9]/.test(last)
+    ? t.slice(0, -1) + ((parseInt(last, 10) + 1) % 10)
+    : t + "-2";
+  runDraw({ flash: true });
+});
+$("round").addEventListener("change", () => {
+  current = working.find((x) => x.round === parseInt($("round").value, 10));
+  fillFields();
+  if (lastDraw) runDraw({ flash: true });
+});
+
+$("go-verify").addEventListener("click", verifyPulse);
+$("t-entropy").addEventListener("click", tamperEntropy);
+$("t-time").addEventListener("click", tamperTime);
+$("t-output").addEventListener("click", tamperOutput);
+$("t-sig").addEventListener("click", tamperSig);
+$("reset").addEventListener("click", resetPulse);
+
+$("go-chain").addEventListener("click", verifyChain);
+$("break-chain").addEventListener("click", breakChain);
+$("repair-chain").addEventListener("click", repairChain);
+$("reset-chain").addEventListener("click", resetChain);
+
+fillFields();
+renderChain();
+runDraw();
+</script>
+</body>
+</html>
