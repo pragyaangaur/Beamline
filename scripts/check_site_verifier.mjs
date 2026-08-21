@@ -30,12 +30,13 @@ const SOURCE = [
   slice("async function checkOne(p, prev) {", "async function checkChain() {"),
 ].join("\n");
 
-const sandbox = new Function("crypto", "PUBKEY", "TextEncoder", `
+const sandbox = new Function("crypto", "PUBKEY", "DATA", "TextEncoder", `
   const enc = new TextEncoder();
   ${SOURCE}
-  return { canonical, recompute, structureError, signatureState, checkOne, cenc };
+  return { canonical, recompute, structureError, signatureState, checkOne, cenc,
+           commitmentState, commitBody };
 `);
-const V = sandbox(webcrypto, BUNDLE.public_key, TextEncoder);
+const V = sandbox(webcrypto, BUNDLE.public_key, BUNDLE, TextEncoder);
 
 let failures = 0;
 const check = (name, cond, detail = "") => {
@@ -121,6 +122,23 @@ console.log("\nmalformed and retired pulses are refused before the crypto runs")
   for (const [label, p] of Object.entries(cases)) {
     check(`rejected: ${label}`, V.structureError(p) !== null, "structureError returned null");
   }
+}
+
+console.log("\nthe commitment check refuses everything except the announced draw");
+{
+  const c = BUNDLE.commitment;
+  check("genuine draw accepted", (await V.commitmentState(c.tag, c.target_round)) === "ok");
+  check("a different name is not covered",
+        (await V.commitmentState(c.tag + " (attempt 138)", c.target_round)) === "mismatch");
+  check("a different round is not covered",
+        (await V.commitmentState(c.tag, c.target_round - 1)) === "mismatch");
+  /* Grinding, concretely: with the pulse in hand, try names until one wins. Every
+     result reproduces; none of them is announced. */
+  let covered = 0;
+  for (let i = 0; i < 200; i++) {
+    if ((await V.commitmentState(`${c.tag} #${i}`, c.target_round)) !== "mismatch") covered++;
+  }
+  check("200 ground-out name variants all uncovered", covered === 0, `${covered} slipped through`);
 }
 
 console.log("\ncanonical bytes match the Python encoder");
