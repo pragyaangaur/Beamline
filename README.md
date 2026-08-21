@@ -61,8 +61,9 @@ case where it has to be secret.
 **[The interactive demo](https://pragyaangaur.github.io/Beamline/)** is the fastest way in.
 Run a draw against a real signed pulse, then edit that pulse and watch the checks fail, or
 rewrite the chain and see what breaks. Ten genuine pulses are baked into the page, and
-everything runs in the browser. It is served from [`docs/`](docs/); regenerate its pulses
-from a live service run with `python scripts/build_site_data.py`.
+everything runs in the browser. It is [`index.html`](index.html) at the repository root,
+which is where GitHub Pages serves this branch from; regenerate its pulses from a live
+service run with `python scripts/build_site_data.py`.
 
 **[The user journey](examples/user_journey.py)** is the same story from a customer's side,
 against a live local server with nothing mocked: a developer gets a key and makes a first
@@ -398,7 +399,8 @@ beamline/
   qa/                SP 800-22 and SP 800-90B implementations
 sdk/python/          client and independent verifier
 sdk/js/              client and verifier (WebCrypto)
-docs/                the interactive demo, served by GitHub Pages
+index.html           the interactive demo, served by GitHub Pages
+chain.json           the pulses embedded in it
 examples/            user journey demo, public draw page
 scripts/             harvest_anu.py, run_nist_tests.py, build_site_data.py
 data/                runtime state, never committed

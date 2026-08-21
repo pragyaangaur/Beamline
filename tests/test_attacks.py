@@ -158,7 +158,7 @@ class TestBrowserVerifier:
     """Attack 3: crash the signature check instead of defeating it."""
 
     def test_the_page_rejects_every_forgery(self):
-        """Runs the page's own functions, sliced out of docs/index.html.
+        """Runs the page's own functions, sliced out of index.html.
 
         The harness is a separate script because the code under test is JavaScript;
         it is invoked here so a Python-only test run still covers it.
@@ -168,7 +168,7 @@ class TestBrowserVerifier:
         assert node.returncode == 0, node.stdout + node.stderr
 
     def test_the_published_page_and_chain_are_in_step(self):
-        chain = json.loads((ROOT / "docs" / "chain.json").read_text())
+        chain = json.loads((ROOT / "chain.json").read_text())
         ok, reason = V.check_chain(chain["pulses"], chain["public_key"])
         assert ok, reason
         assert chain["pulses"][0]["version"] == VERSION

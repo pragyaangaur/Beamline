@@ -1,4 +1,4 @@
-"""Generate the pulse chain embedded in the GitHub Pages site (`docs/index.html`).
+"""Generate the pulse chain embedded in the GitHub Pages site (`index.html`).
 
 The site is static, so its data has to be baked in -- but it is baked in from a real
 run of the real service, not hand-written. This script starts a `BeamlineService`
@@ -7,9 +7,10 @@ genuinely signed pulses, and writes them out as JSON.
 
     python scripts/build_site_data.py --rounds 10 --spacing 6
 
-It writes `docs/chain.json` and injects the same bundle into the
-`<script id="chain-data">` block of `docs/index.html`, so the page stays a single
-self-contained file that works over file:// as well as over GitHub Pages.
+It writes `chain.json` and injects the same bundle into the `<script id="chain-data">`
+block of `index.html`, so the page stays a single self-contained file that works over
+file:// as well as over GitHub Pages. Both live at the repository root because Pages is
+configured to serve this branch from `/`.
 
     python scripts/build_site_data.py --inject-only    # re-inject existing chain.json
 """
@@ -85,7 +86,7 @@ async def build(rounds: int, spacing: float, period: int) -> dict:
     }
 
 
-SITE = ROOT / "docs" / "index.html"
+SITE = ROOT / "index.html"
 MARKER = re.compile(
     r'(<script id="chain-data" type="application/json">).*?(</script>)', re.S)
 
@@ -98,7 +99,7 @@ def inject(bundle: dict) -> None:
         raise SystemExit("refusing to inject: payload contains a closing script tag")
     new, n = MARKER.subn(lambda m: m.group(1) + payload + m.group(2), html, count=1)
     if n != 1:
-        raise SystemExit('could not find the <script id="chain-data"> block in docs/index.html')
+        raise SystemExit('could not find the <script id="chain-data"> block in index.html')
     SITE.write_text(new)
     print(f"injected {len(bundle['pulses'])} pulses into {SITE}", file=sys.stderr)
 
@@ -108,7 +109,7 @@ def main() -> None:
     ap.add_argument("--rounds", type=int, default=10)
     ap.add_argument("--spacing", type=float, default=6.0, help="seconds between pulses")
     ap.add_argument("--period", type=int, default=60, help="declared pulse period")
-    ap.add_argument("--out", default=str(ROOT / "docs" / "chain.json"))
+    ap.add_argument("--out", default=str(ROOT / "chain.json"))
     ap.add_argument("--inject-only", action="store_true",
                     help="skip generation; re-inject the existing chain.json")
     args = ap.parse_args()
