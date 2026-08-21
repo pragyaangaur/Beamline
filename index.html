@@ -709,6 +709,35 @@ async function runChecks(silent) {
              + "check it with the Python SDK instead" }
     : { nm: "Signature", ok: false, why: "not signed by Beamline in this form" });
 
+  if (!lastDraw) {
+    out.push({ nm: "Announced first", ok: true, why: "no draw run yet" });
+    out.push({ nm: "Winners", ok: true, why: "no draw run yet" });
+  } else {
+    /* The question a hash cannot answer. Everything above says this pulse is real;
+       none of it says the name and the round were picked before it was published. */
+    const cs = await commitmentState(lastDraw.tag, current.round);
+    out.push(cs === "ok"
+      ? { nm: "Announced first", ok: true,
+          why: `"${COMMIT.tag}" was registered at round ${COMMIT.created_after_round}, `
+               + `before round ${COMMIT.target_round} existed` }
+      : cs === "unavailable"
+      ? { nm: "Announced first", ok: false, unknown: true,
+          why: "this browser has no Ed25519, so the receipt cannot be checked here" }
+      : cs === "mismatch"
+      ? { nm: "Announced first", ok: false,
+          why: `nothing was announced for "${lastDraw.tag}" at round ${current.round}. `
+               + "The winners below still reproduce, and that was never the question: "
+               + "with the pulse already published, this name and this round were both "
+               + "chosen knowing it." }
+      : { nm: "Announced first", ok: false, why: "no valid announcement covers this draw" });
+
+    const now = await drawFrom(current.output, lastDraw.tag, lastDraw.count, lastDraw.entrants);
+    const same = JSON.stringify(now) === JSON.stringify(lastDraw.winners);
+    out.push(same
+      ? { nm: "Winners", ok: true, why: `reproduce exactly: ${now.join(", ")}` }
+      : { nm: "Winners", ok: false, why: `changed to ${now.join(", ")}` });
+  }
+
   $("checks").innerHTML = out.map((c) =>
     `<li class="${c.ok ? "ok" : c.unknown ? "unknown" : "bad"}"><span class="mk">${
        c.ok ? "✓" : c.unknown ? "?" : "✕"}</span>
