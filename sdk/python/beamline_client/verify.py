@@ -326,3 +326,120 @@ def reproduce_shuffle(pulse_output_hex: str, tag: str, items: list) -> list:
         j = bounded_int(rand, i + 1)
         out[i], out[j] = out[j], out[i]
     return out
+
+
+# --- commitments -----------------------------------------------------------
+COMMITMENT_VERSION = "beamline/commitment/v1"
+COMMITMENT_BODY_FIELDS = ("version", "commit_id", "tag", "target_round",
+                          "created_at_ms", "created_after_round", "public_key")
+
+
+def canonical_commitment_body(receipt: dict) -> bytes:
+    return _enc({k: receipt.get(k) for k in COMMITMENT_BODY_FIELDS}, "$").encode("ascii")
+
+
+def check_commitment(receipt: dict, public_key_hex: str | None = None, *,
+                     trusted_keys: Iterable[str] | str | None = None,
+                     allow_unsigned: bool = False) -> tuple[bool, str]:
+    """Check that a draw was named before the pulse that decided it existed.
+
+    This is the check the beacon cannot make for you. A pulse proves it was not
+    edited; it says nothing about whether the tag and the round were chosen before or
+    after it was published, and a runner who chooses either afterwards picks the
+    winner outright while every signature stays valid.
+
+    The receipt carries `created_after_round`: where the chain stood when the
+    announcement was made. If that is not strictly below `target_round`, the deciding
+    pulse already existed and the commitment is worthless -- so that is checked before
+    anything else, and no signature can rescue it.
+    """
+    anchor = _anchor(public_key_hex, trusted_keys)
+    if anchor is None and not allow_unsigned:
+        return False, "no trust anchor: pass the signing key you expect"
+    if not isinstance(receipt, dict):
+        return False, "commitment must be an object"
+    if receipt.get("version") != COMMITMENT_VERSION:
+        return False, f"unexpected commitment version {receipt.get('version')!r}"
+    for name in ("target_round", "created_at_ms", "created_after_round"):
+        v = receipt.get(name)
+        if not isinstance(v, int) or isinstance(v, bool):
+            return False, f"{name} must be an integer"
+    if not isinstance(receipt.get("tag"), str) or not receipt["tag"]:
+        return False, "tag must be a non-empty string"
+    if not isinstance(receipt.get("commit_id"), str) or not receipt["commit_id"]:
+        return False, "commit_id must be a non-empty string"
+    if receipt["target_round"] <= receipt["created_after_round"]:
+        return False, (f"commitment names round {receipt['target_round']} but the chain "
+                       f"had already reached round {receipt['created_after_round']}; "
+                       f"the deciding pulse existed before the draw was announced")
+    try:
+        body = canonical_commitment_body(receipt)
+    except NotCanonical as e:
+        return False, str(e)
+
+    sig, declared = receipt.get("signature"), receipt.get("public_key")
+    if not sig:
+        if anchor is not None:
+            return False, "commitment is unsigned; anyone could have written it afterwards"
+        return True, "well-formed but UNSIGNED: proves nothing about when it was made"
+    if not declared:
+        return False, "commitment is signed but declares no public key"
+    if anchor is not None and declared not in anchor:
+        return False, f"commitment signed by an untrusted key ({declared[:16]}...)"
+    if not HAVE_ED25519:
+        return False, "install 'cryptography' to check signatures"
+    try:
+        Ed25519PublicKey.from_public_bytes(bytes.fromhex(declared)).verify(
+            bytes.fromhex(sig), body)
+    except Exception:
+        return False, "ed25519 signature is invalid"
+    return True, "ok"
+
+
+def check_draw(pulse: dict, commitment: dict, result, public_key_hex: str | None = None, *,
+               kind: str = "integers", items: list | None = None,
+               count: int = 1, minimum: int = 0, maximum: int = 100,
+               prev: dict | None = None,
+               trusted_keys: Iterable[str] | str | None = None) -> tuple[bool, str]:
+    """The whole question, answered in one call: was this draw fair?
+
+    Four things have to hold, and checking three of them is how people convince
+    themselves of something untrue:
+
+      1. The pulse is authentic -- signed by a key you named, hashing to its contents.
+      2. The commitment is authentic, and was made before that pulse existed.
+      3. The commitment names *this* draw: this exact tag, this exact round.
+      4. The published result is what that pulse and that tag actually produce.
+
+    Returns (ok, reason). A False here means do not believe the result, whatever the
+    runner has published alongside it.
+    """
+    ok, why = check_pulse(pulse, public_key_hex, prev, trusted_keys=trusted_keys)
+    if not ok:
+        return False, f"pulse: {why}"
+
+    ok, why = check_commitment(commitment, public_key_hex, trusted_keys=trusted_keys)
+    if not ok:
+        return False, f"commitment: {why}"
+
+    if commitment["target_round"] != pulse["round"]:
+        return False, (f"commitment names round {commitment['target_round']} but the "
+                       f"result was drawn from round {pulse['round']}")
+
+    tag = commitment["tag"]
+    if kind == "integers":
+        expected = reproduce_integers(pulse["output"], tag, count, minimum, maximum)
+    elif kind == "shuffle":
+        if items is None:
+            return False, "shuffle requires the item list"
+        expected = reproduce_shuffle(pulse["output"], tag, items)
+    else:
+        return False, f"check_draw does not know how to reproduce kind {kind!r}"
+
+    if list(result) != list(expected):
+        return False, (f"result does not match the pulse: published {list(result)!r}, "
+                       f"recomputed {expected!r}")
+
+    return True, (f"round {pulse['round']} is authentic, tag {tag!r} was committed at "
+                  f"round {commitment['created_after_round']} before that pulse "
+                  f"existed, and the result reproduces exactly")
