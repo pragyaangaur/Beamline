@@ -570,7 +570,7 @@ async function runChecks(silent) {
   out.push(!prev
     ? { nm: "Position", ok: true, why: "first pulse loaded; nothing to link to" }
     : current.prev_output === prev.output && current.round === prev.round + 1
-      && current.timestamp_ms > prev.timestamp_ms
+      && current.timestamp_ms >= prev.timestamp_ms
     ? { nm: "Position", ok: true, why: `follows round ${prev.round}` }
     : { nm: "Position", ok: false, why: `does not follow round ${prev.round}` });
 
@@ -623,7 +623,7 @@ async function checkOne(p, prev) {
   if (prev && (p.prev_output !== prev.output || p.round !== prev.round + 1)) {
     return { state: "bad", label: "broken link" };
   }
-  if (prev && p.timestamp_ms <= prev.timestamp_ms) {
+  if (prev && p.timestamp_ms < prev.timestamp_ms) {
     /* An archive built after the fact gets this wrong: rounds written in whatever
        order the forger produced them, rather than in the order they happened. */
     return { state: "bad", label: "out of order" };

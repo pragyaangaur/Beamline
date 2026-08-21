@@ -208,8 +208,10 @@ def check_pulse(pulse: dict, public_key_hex: str | None = None, prev: dict | Non
             return False, f"round {pulse['round']} does not link to round {prev['round']}"
         if pulse["round"] != prev["round"] + 1:
             return False, "round numbers are not consecutive"
-        if pulse["timestamp_ms"] <= prev["timestamp_ms"]:
-            return False, f"round {pulse['round']} is not later than round {prev['round']}"
+        if pulse["timestamp_ms"] < prev["timestamp_ms"]:
+            # Non-decreasing: two pulses can honestly share a millisecond, but time
+            # never runs backwards in a chain built as it went.
+            return False, f"round {pulse['round']} is dated before round {prev['round']}"
 
     sig = pulse.get("signature")
     declared = pulse.get("public_key")
