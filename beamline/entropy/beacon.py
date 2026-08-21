@@ -41,7 +41,7 @@ import threading
 import time
 from dataclasses import asdict, dataclass, field
 
-from .canonical import NotCanonical, encode, sanitize
+from .canonical import NotCanonical, encode, is_canonical, sanitize
 
 try:  # optional -- the beacon still chains correctly unsigned
     from cryptography.hazmat.primitives.asymmetric.ed25519 import (
@@ -115,17 +115,67 @@ class Pulse:
         return asdict(self)
 
 
-def verify_pulse(pulse: dict, prev_output: str | None = None,
-                 public_key_hex: str | None = None) -> tuple[bool, str]:
-    """Recompute a pulse's output, chain link, and signature. Returns (ok, reason).
+HEX_LENGTHS = {"prev_output": 128, "local_value": 128, "output": 128,
+               "public_key": 64, "signature": 128}
 
-    The signature is checked against the key the pulse itself declares, which is inside
-    the signed body and therefore cannot be swapped without breaking the hash. When
-    `public_key_hex` is supplied it is treated as the caller's trust anchor: a mismatch
-    is reported as a key change rather than a bad signature, so a rotation is visible as
-    what it is instead of looking like tampering.
+def _hex_field(pulse: dict, name: str, required: bool = True) -> str | None:
+    """Structural check for one hex field. Length is fixed, so check it."""
+    value = pulse.get(name)
+    if value is None:
+        if required:
+            raise ValueError(f"missing field {name!r}")
+        return None
+    if not isinstance(value, str):
+        raise ValueError(f"{name} must be a string")
+    want = HEX_LENGTHS[name]
+    if len(value) != want:
+        raise ValueError(f"{name} must be {want} hex characters, got {len(value)}")
+    try:
+        bytes.fromhex(value)
+    except ValueError as e:
+        raise ValueError(f"{name} is not valid hex") from e
+    return value
+
+
+def check_structure(pulse: dict) -> None:
+    """Reject anything malformed *before* any cryptography runs.
+
+    A verifier that lets a malformed pulse reach the signature check has to decide
+    what a thrown exception means, and the honest answers ("bad key", "old browser",
+    "unsupported curve") are indistinguishable from the dishonest one. Rejecting here
+    means the crypto only ever sees well-formed input, so a failure downstream can be
+    treated as what it is: a failed verification.
     """
-    p = Pulse(
+    version = pulse.get("version")
+    if version in RETIRED_VERSIONS:
+        raise ValueError(f"pulse version {version!r} is retired: {RETIRED_VERSIONS[version]}")
+    if version != VERSION:
+        raise ValueError(f"unexpected pulse version {version!r}; this verifier speaks {VERSION!r}")
+    for name in ("round", "timestamp_ms", "period_seconds"):
+        value = pulse.get(name)
+        if not isinstance(value, int) or isinstance(value, bool):
+            raise ValueError(f"{name} must be an integer, got {type(value).__name__}")
+    if pulse["round"] < 1:
+        raise ValueError("round must be >= 1")
+    if pulse["period_seconds"] < 1:
+        raise ValueError("period_seconds must be >= 1")
+    if pulse["timestamp_ms"] < 0:
+        raise ValueError("timestamp_ms must not be negative")
+    for name in ("prev_output", "local_value", "output"):
+        _hex_field(pulse, name)
+    _hex_field(pulse, "public_key", required=False)
+    _hex_field(pulse, "signature", required=False)
+    if not isinstance(pulse.get("provenance", {}), dict):
+        raise ValueError("provenance must be an object")
+    ok, why = is_canonical(_body_of(pulse))
+    if not ok:
+        raise ValueError(f"pulse body is not canonically encodable: {why}")
+    if pulse["round"] == 1 and pulse["prev_output"] != GENESIS:
+        raise ValueError("round 1 must start from the genesis value")
+
+
+def _body_of(pulse: dict) -> dict:
+    return Pulse(
         version=pulse["version"],
         round=pulse["round"],
         timestamp_ms=pulse["timestamp_ms"],
@@ -134,31 +184,83 @@ def verify_pulse(pulse: dict, prev_output: str | None = None,
         local_value=pulse["local_value"],
         public_key=pulse.get("public_key"),
         provenance=pulse.get("provenance", {}),
-    )
-    if p.compute_output() != pulse.get("output"):
+    ).body()
+
+
+def _trust_anchor(public_key_hex: str | None, trusted_keys) -> set[str] | None:
+    if trusted_keys is None:
+        return {public_key_hex} if public_key_hex else None
+    if isinstance(trusted_keys, str):
+        return {trusted_keys}
+    keys = set(trusted_keys)
+    return keys or None
+
+
+def verify_pulse(pulse: dict, prev_output: str | None = None,
+                 public_key_hex: str | None = None, *,
+                 trusted_keys=None, allow_unsigned: bool = False) -> tuple[bool, str]:
+    """Recompute a pulse's output, chain link, and signature. Returns (ok, reason).
+
+    Verification is **fail-closed**, and both halves of that are deliberate.
+
+    A trust anchor is required. Earlier revisions defaulted `public_key_hex` to None
+    and, with no key to check against, accepted any internally consistent pulse -- so
+    an attacker could publish a wholly fabricated unsigned chain and this function
+    would call it valid. Authenticity cannot be established without knowing whose
+    signature to expect, so a caller who supplies no key now gets a refusal instead of
+    a green light. `allow_unsigned=True` is available for the one honest case, an
+    operator inspecting their own not-yet-signed deployment, and it says so in the
+    reason string.
+
+    An unrecognised signing key is a failure, not a note. Treating it as an announced
+    rotation and returning True meant a chain signed by an attacker's own key passed
+    while the caller pinned the real one -- the reason string mentioned it, but every
+    caller that checks the boolean saw success. Rotation is expressed by naming both
+    keys in `trusted_keys`, which makes accepting a new key a decision the verifier
+    makes rather than one the pulse announces about itself.
+    """
+    anchor = _trust_anchor(public_key_hex, trusted_keys)
+    if anchor is None and not allow_unsigned:
+        return False, ("no trust anchor: pass the signing key you expect, or "
+                       "allow_unsigned=True to check structure and chaining only")
+
+    try:
+        check_structure(pulse)
+    except ValueError as e:
+        return False, str(e)
+
+    p = Pulse(**{k: pulse.get(k) for k in
+                 ("version", "round", "timestamp_ms", "period_seconds",
+                  "prev_output", "local_value", "public_key")},
+              provenance=pulse.get("provenance", {}))
+    if p.compute_output() != pulse["output"]:
         return False, "output hash does not match pulse contents"
     if prev_output is not None and pulse["prev_output"] != prev_output:
         return False, "prev_output does not match the preceding pulse"
+
     sig = pulse.get("signature")
     declared = pulse.get("public_key")
 
-    if sig:
-        if not declared:
-            return False, "pulse is signed but declares no public key"
-        if not HAVE_ED25519:
-            return False, "signature present but ed25519 support is not installed"
-        try:
-            Ed25519PublicKey.from_public_bytes(bytes.fromhex(declared)).verify(
-                bytes.fromhex(sig), p.signing_bytes())
-        except Exception:
-            return False, "ed25519 signature verification failed"
-    elif public_key_hex:
-        return False, "pulse is unsigned but a public key was supplied"
+    if not sig:
+        if anchor is not None:
+            return False, "pulse is unsigned and cannot be attributed to anyone"
+        return True, "structure and chaining are valid; pulse is UNSIGNED and unattributed"
 
-    if public_key_hex and declared and declared != public_key_hex:
-        return True, (f"valid, but signed by a DIFFERENT key "
-                      f"({declared[:16]}... not {public_key_hex[:16]}...) -- "
-                      f"the operator rotated keys at or before this round")
+    if not declared:
+        return False, "pulse is signed but declares no public key"
+    if anchor is not None and declared not in anchor:
+        return False, (f"signed by an untrusted key ({declared[:16]}...). If this is an "
+                       f"announced rotation, pass it in trusted_keys.")
+    if not HAVE_ED25519:
+        return False, "signature present but ed25519 support is not installed"
+    try:
+        Ed25519PublicKey.from_public_bytes(bytes.fromhex(declared)).verify(
+            bytes.fromhex(sig), p.signing_bytes())
+    except Exception:
+        return False, "ed25519 signature verification failed"
+
+    if anchor is None:
+        return True, "self-consistent and self-signed, but no trust anchor was supplied"
     return True, "ok"
 
 
