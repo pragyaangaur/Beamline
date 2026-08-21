@@ -1,6 +1,6 @@
 """The published demo page must never carry a chain that does not verify.
 
-docs/index.html embeds ten real pulses and invites strangers to check them. If the
+index.html embeds ten real pulses and invites strangers to check them. If the
 pulse format ever changes and the embedded data is not regenerated, the page becomes
 a live demonstration that Beamline's own verification fails -- which is worse than
 having no demo at all. So the embedded bundle is verified here, by the independent
@@ -17,8 +17,8 @@ from pathlib import Path
 import pytest
 
 ROOT = Path(__file__).resolve().parent.parent
-SITE = ROOT / "docs" / "index.html"
-CHAIN = ROOT / "docs" / "chain.json"
+SITE = ROOT / "index.html"
+CHAIN = ROOT / "chain.json"
 
 sys.path.insert(0, str(ROOT / "sdk" / "python"))
 from beamline_client import verify as V  # noqa: E402
@@ -29,7 +29,7 @@ EMBEDDED = re.compile(
 
 def load_embedded() -> dict:
     m = EMBEDDED.search(SITE.read_text())
-    assert m, 'docs/index.html has no <script id="chain-data"> block'
+    assert m, 'index.html has no <script id="chain-data"> block'
     return json.loads(m.group(1))
 
 

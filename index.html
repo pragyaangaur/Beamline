@@ -3,165 +3,217 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Beamline &mdash; provably fair draws</title>
-<meta name="description" content="Run a draw anyone can check. Pick winners from a public beacon pulse, then verify the result yourself in the browser.">
-<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'><text y='13' font-size='14'>&#9678;</text></svg>">
+<title>Beamline: provably fair draws</title>
+<meta name="description" content="Run a draw anyone can check. Pick winners from a public signed pulse, then verify the result yourself in the browser.">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='7' fill='%230B57D0'/><path d='M5.3 12.5 L16 21.5 L24 14.8' fill='none' stroke='%23fff' stroke-width='3.3' stroke-linecap='round' stroke-linejoin='round'/><path d='M0 -5 L4.7 3.3 L-4.7 3.3 Z' fill='%23fff' transform='translate(25.5 13.5) rotate(50)'/></svg>">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=IBM+Plex+Mono:wght@400;500&display=swap">
 <style>
+  /* White, hyperlink blue, black. A single light theme, painted explicitly. */
   :root{
-    --paper:#EEF2F1; --raise:#F7FAF9; --sunk:#E2E9E8;
-    --ink:#0C1116; --ink-2:#3C4A50; --ink-3:#6B7C82;
-    --rule:#CBD6D5; --rule-2:#DEE6E5;
-    --accent:#0B6E77; --accent-soft:#D6E9EA;
-    --ok:#14713F; --ok-soft:#D3E9DC;
-    --alert:#A6202F; --alert-soft:#F3D8DB;
-    --shadow:0 1px 2px rgba(12,17,22,.06),0 10px 30px -14px rgba(12,17,22,.22);
+    --bg:#FFFFFF; --band:#F5F8FD; --sunk:#F6F8FC;
+    --ink:#0A0A0B; --ink-2:#3C4147; --ink-3:#666C73;
+    --line:#D9DEE5; --line-2:#EAEEF3;
+    --blue:#0B57D0; --blue-dark:#083C93; --blue-soft:#E8F0FE;
+    --ok:#0B57D0; --ok-soft:#E8F0FE;
+    --bad:#C5221F; --bad-soft:#FCE8E6;
   }
-  @media (prefers-color-scheme:dark){
-    :root:not([data-theme="light"]){
-      --paper:#0B1013; --raise:#141C20; --sunk:#080C0F;
-      --ink:#E6EFEE; --ink-2:#A7B8BA; --ink-3:#75898C;
-      --rule:#243033; --rule-2:#1B2427;
-      --accent:#3DD6DF; --accent-soft:#0E3438;
-      --ok:#46C97C; --ok-soft:#0F3021;
-      --alert:#FF7480; --alert-soft:#3A161A;
-      --shadow:0 1px 2px rgba(0,0,0,.5),0 10px 30px -14px rgba(0,0,0,.8);
-    }
-  }
-  :root[data-theme="dark"]{
-    --paper:#0B1013; --raise:#141C20; --sunk:#080C0F;
-    --ink:#E6EFEE; --ink-2:#A7B8BA; --ink-3:#75898C;
-    --rule:#243033; --rule-2:#1B2427;
-    --accent:#3DD6DF; --accent-soft:#0E3438;
-    --ok:#46C97C; --ok-soft:#0F3021;
-    --alert:#FF7480; --alert-soft:#3A161A;
-    --shadow:0 1px 2px rgba(0,0,0,.5),0 10px 30px -14px rgba(0,0,0,.8);
-  }
-
   *{box-sizing:border-box}
+  html{background:var(--bg)}
   body{
-    margin:0; background:var(--paper); color:var(--ink);
-    font-family:Archivo,"Helvetica Neue",Arial,sans-serif; font-size:15px; line-height:1.5;
-    -webkit-font-smoothing:antialiased;
+    margin:0; background:var(--bg); color:var(--ink);
+    font-family:Inter,-apple-system,"Segoe UI",Helvetica,Arial,sans-serif;
+    font-size:17px; line-height:1.6; -webkit-font-smoothing:antialiased;
   }
   .mono,code,input,td,.num{font-family:"IBM Plex Mono",ui-monospace,Menlo,monospace}
-  .wrap{max-width:760px; margin:0 auto; padding:clamp(20px,4vw,40px) clamp(16px,4vw,28px) 64px}
-  a{color:var(--accent)}
+  a{color:var(--blue)} a:hover{color:var(--blue-dark)}
+  .shell{width:100%; max-width:1280px; margin:0 auto; padding:0 clamp(20px,4vw,56px)}
 
-  /* ---- header ---- */
-  header{display:flex; align-items:center; gap:12px; flex-wrap:wrap; margin-bottom:6px}
-  .mark{font-weight:700; font-size:15px; letter-spacing:.18em; text-transform:uppercase}
-  .tagline{color:var(--ink-3); font-size:14px; margin:0 0 20px; max-width:52ch}
+  /* ---- full-width top bar ---- */
+  .topbar{position:sticky; top:0; z-index:20; background:var(--bg);
+          border-bottom:1px solid var(--line)}
+  .bar{display:flex; align-items:center; gap:16px; min-height:76px; flex-wrap:wrap}
+  .brand{display:flex; align-items:center; gap:12px; text-decoration:none; color:var(--ink)}
+  .logo{width:38px; height:38px; flex:none; display:block}
+  .mark{font-weight:800; font-size:20px; letter-spacing:.14em; text-transform:uppercase}
+  nav{display:flex; gap:6px; margin-left:auto}
+  nav button{font-family:inherit; font-size:16px; font-weight:600; background:transparent;
+             color:var(--ink-2); border:0; border-bottom:3px solid transparent;
+             padding:10px 4px; margin-bottom:-1px; cursor:pointer}
+  nav button + button{margin-left:26px}
+  nav button:hover{color:var(--blue)}
+  nav button[aria-selected="true"]{color:var(--blue); border-bottom-color:var(--blue)}
+  nav button:focus-visible{outline:2px solid var(--blue); outline-offset:3px}
 
-  /* ---- tabs ---- */
-  nav{display:flex; gap:2px; margin-left:auto; background:var(--sunk);
-      border:1px solid var(--rule-2); border-radius:5px; padding:3px}
-  nav button{font-size:13px; font-weight:600; background:transparent; color:var(--ink-3);
-             border:0; border-radius:3px; padding:7px 14px; cursor:pointer}
-  nav button[aria-selected="true"]{background:var(--raise); color:var(--ink); box-shadow:var(--shadow)}
-  nav button:focus-visible{outline:2px solid var(--accent); outline-offset:1px}
+  /* ---- hero ---- */
+  /* Vertical only: the shorthand would wipe out .shell's horizontal padding and
+     push the headline against the edge of the screen. */
+  .hero{padding-top:clamp(40px,6vw,76px); padding-bottom:clamp(28px,4vw,44px)}
+  h1{font-size:clamp(40px,6vw,72px); line-height:1.02; font-weight:800;
+     letter-spacing:-.035em; margin:0 0 22px; max-width:22ch}
+  .sub{font-size:clamp(19px,1.7vw,24px); line-height:1.45; color:var(--ink-2);
+       margin:0; max-width:60ch; font-weight:400; text-wrap:pretty}
 
+  /* ---- bands ---- */
+  .band{border-top:1px solid var(--line); background:var(--band);
+        padding:clamp(28px,4vw,48px) 0}
   .pane[hidden]{display:none}
+  .panetitle{font-size:clamp(24px,2.6vw,32px); font-weight:700; letter-spacing:-.02em;
+             margin:0 0 10px}
+  .panelede{font-size:19px; color:var(--ink-2); margin:0 0 28px; max-width:78ch;
+            text-wrap:pretty}
 
-  /* ---- card ---- */
-  .card{background:var(--raise); border:1px solid var(--rule); border-radius:6px;
-        padding:18px; box-shadow:var(--shadow)}
-  .card + .card{margin-top:14px}
+  /* ---- form ---- */
+  .card{background:var(--bg); border:1px solid var(--line); border-radius:12px;
+        padding:clamp(20px,2.6vw,32px)}
+  .grid{display:grid; grid-template-columns:2fr 1fr 1fr; gap:20px}
+  .grid.wide{grid-template-columns:1fr 1fr 1fr}
+  .grid.one{grid-template-columns:1fr}
+  .f{display:flex; flex-direction:column; gap:8px; min-width:0}
+  .f label{font-size:13px; letter-spacing:.06em; text-transform:uppercase; color:var(--ink-3);
+           font-weight:700}
+  input{font-size:16px; color:var(--ink); background:var(--bg);
+        border:1px solid var(--line); border-radius:8px; padding:13px 14px; width:100%;
+        min-width:0}
+  input:focus{outline:2px solid var(--blue); outline-offset:-1px; border-color:transparent}
+  input.edited{border-color:var(--bad); background:var(--bad-soft); color:var(--bad)}
 
-  .grid{display:grid; grid-template-columns:repeat(auto-fit,minmax(130px,1fr)); gap:12px}
-  .f{display:flex; flex-direction:column; gap:5px; min-width:0}
-  .f label{font-size:10px; letter-spacing:.12em; text-transform:uppercase; color:var(--ink-3);
-           font-weight:600}
-  input,select{font-size:13.5px; color:var(--ink); background:var(--paper);
-        border:1px solid var(--rule); border-radius:4px; padding:9px 10px; width:100%; min-width:0}
-  select{font-family:Archivo,sans-serif}
-  input:focus,select:focus{outline:2px solid var(--accent); outline-offset:-1px; border-color:transparent}
-  input.edited{border-color:var(--alert); background:var(--alert-soft)}
+  .row{display:flex; gap:12px; flex-wrap:wrap; align-items:center; margin-top:24px}
+  button.go{font-family:inherit; font-size:17px; font-weight:600; background:var(--blue);
+            color:#fff; border:1px solid var(--blue); border-radius:8px; padding:14px 28px;
+            cursor:pointer}
+  button.go:hover{background:var(--blue-dark); border-color:var(--blue-dark)}
+  button.chip{font-family:inherit; font-size:15px; font-weight:600; background:var(--bg);
+              color:var(--ink-2); border:1px solid var(--line); border-radius:8px;
+              padding:13px 20px; cursor:pointer}
+  button.chip:hover{border-color:var(--blue); color:var(--blue)}
+  button.chip.warn{color:var(--bad); border-color:#F0C7C5}
+  button.chip.warn:hover{background:var(--bad-soft); border-color:var(--bad)}
+  button[disabled]{opacity:.35; cursor:default}
+  button:focus-visible{outline:2px solid var(--blue); outline-offset:2px}
 
-  .row{display:flex; gap:8px; flex-wrap:wrap; align-items:center; margin-top:14px}
-  button.go{font-size:14px; font-weight:600; background:var(--ink); color:var(--paper);
-            border:1px solid var(--ink); border-radius:4px; padding:10px 18px; cursor:pointer}
-  button.chip{font-size:12.5px; font-weight:600; background:transparent; color:var(--ink-2);
-              border:1px solid var(--rule); border-radius:99px; padding:7px 13px; cursor:pointer}
-  button.chip.warn{color:var(--alert); border-color:var(--alert-soft)}
-  button:hover{opacity:.82}
-  button[disabled]{opacity:.4; cursor:default}
-  button:focus-visible{outline:2px solid var(--accent); outline-offset:2px}
-
-  /* ---- result ---- */
-  .winners{display:flex; gap:8px; flex-wrap:wrap; margin-top:16px}
-  .w{flex:1 1 110px; background:var(--sunk); border:1px solid var(--rule-2);
-     border-top:3px solid var(--accent); border-radius:4px; padding:12px 14px}
-  .w b{display:block; font-size:9.5px; letter-spacing:.13em; text-transform:uppercase;
-       color:var(--ink-3); font-weight:600}
-  .w .num{font-size:24px; font-weight:500; margin-top:2px; font-variant-numeric:tabular-nums;
-          word-break:break-all}
+  /* ---- winners ---- */
+  .winners{display:grid; grid-template-columns:repeat(auto-fit,minmax(200px,1fr));
+           gap:16px; margin-top:28px}
+  .w{background:var(--blue-soft); border:1px solid #CCDFFB; border-radius:10px;
+     padding:20px 22px}
+  .w b{display:block; font-size:13px; letter-spacing:.07em; text-transform:uppercase;
+       color:var(--blue); font-weight:700}
+  .w .num{font-size:clamp(34px,3.4vw,44px); font-weight:500; margin-top:6px; color:var(--ink);
+          font-variant-numeric:tabular-nums; letter-spacing:-.02em; word-break:break-all}
   .w.flash{animation:fl .55s ease}
-  @keyframes fl{from{background:var(--accent-soft)}to{background:var(--sunk)}}
+  @keyframes fl{from{background:#CCDFFB}to{background:var(--blue-soft)}}
 
-  .stamp{display:flex; align-items:center; gap:10px; flex-wrap:wrap; margin-top:14px;
-         padding-top:12px; border-top:1px solid var(--rule-2); font-size:13px; color:var(--ink-3)}
-  .badge{font-size:11px; font-weight:700; letter-spacing:.1em; text-transform:uppercase;
-         padding:4px 9px; border-radius:3px; background:var(--rule-2); color:var(--ink-2)}
+  .stamp{display:flex; align-items:center; gap:16px; flex-wrap:wrap; margin-top:26px;
+         padding-top:22px; border-top:1px solid var(--line-2); font-size:17px;
+         color:var(--ink-2)}
+  /* Takes a line of its own so a repeated draw can say so out loud. A determinstic
+     result is identical every time, which without this reads as a dead button. */
+  #stamp-note{flex-basis:100%; font-size:16px; color:var(--ink-3); margin:0}
+  #stamp-note:empty{display:none}
+  .empty{margin-top:28px; padding:34px 24px; border:2px dashed var(--line);
+         border-radius:10px; text-align:center; color:var(--ink-3); font-size:17px}
+  .empty b{color:var(--ink); font-weight:600}
+  .badge{font-size:13px; font-weight:700; letter-spacing:.07em; text-transform:uppercase;
+         padding:7px 14px; border-radius:6px; background:var(--sunk); color:var(--ink-3)}
   .badge.ok{background:var(--ok-soft); color:var(--ok)}
-  .badge.bad{background:var(--alert-soft); color:var(--alert)}
+  .badge.bad{background:var(--bad-soft); color:var(--bad)}
 
   /* ---- checks ---- */
-  .checks{list-style:none; margin:16px 0 0; padding:0}
-  .checks li{display:flex; gap:10px; align-items:baseline; padding:9px 0;
-             border-bottom:1px solid var(--rule-2); font-size:13.5px}
+  .checks{list-style:none; margin:28px 0 0; padding:0}
+  .checks li{display:flex; gap:16px; align-items:baseline; padding:16px 0;
+             border-bottom:1px solid var(--line-2); font-size:17px}
   .checks li:last-child{border-bottom:0}
-  .checks .mk{font-size:13px; width:14px; flex:none; color:var(--ink-3)}
-  .checks li.ok .mk{color:var(--ok)} .checks li.bad .mk{color:var(--alert)}
-  .checks li.unknown .mk{color:var(--muted)} .checks li.unknown .why{color:var(--muted)}
-  .checks .nm{font-weight:600; width:104px; flex:none}
-  .checks .why{color:var(--ink-3); min-width:0}
-  .checks li.bad .why{color:var(--alert)}
+  .checks .mk{font-size:17px; width:18px; flex:none; color:var(--ink-3)}
+  .checks li.ok .mk{color:var(--ok)} .checks li.bad .mk{color:var(--bad)}
+  .checks .nm{font-weight:700; width:130px; flex:none}
+  .checks .why{color:var(--ink-2); min-width:0}
+  .checks li.bad .why{color:var(--bad)}
+  /* Unverified is neither pass nor fail, and must not read as either. */
+  .checks li.unknown .mk{color:var(--ink-3)} .checks li.unknown .why{color:var(--ink-3)}
 
   /* ---- table ---- */
-  .scroll{overflow-x:auto; margin-top:14px}
-  table{width:100%; border-collapse:collapse; font-size:12.5px;
-        font-variant-numeric:tabular-nums; min-width:430px}
-  th{font-size:10px; letter-spacing:.12em; text-transform:uppercase; color:var(--ink-3);
-     text-align:left; font-weight:600; padding:0 12px 7px 0; border-bottom:1px solid var(--rule)}
-  td{padding:7px 12px 7px 0; border-bottom:1px solid var(--rule-2); color:var(--ink-2);
+  .scroll{overflow-x:auto; margin-top:26px}
+  table{width:100%; border-collapse:collapse; font-size:15px;
+        font-variant-numeric:tabular-nums; min-width:560px}
+  th{font-size:13px; letter-spacing:.06em; text-transform:uppercase; color:var(--ink-3);
+     text-align:left; font-weight:700; padding:0 20px 12px 0; border-bottom:2px solid var(--line)}
+  td{padding:14px 20px 14px 0; border-bottom:1px solid var(--line-2); color:var(--ink-2);
      white-space:nowrap}
   tr:last-child td{border-bottom:0}
   td.h{color:var(--ink-3)}
-  .st{font-family:Archivo,sans-serif; font-size:10px; font-weight:700; letter-spacing:.09em;
+  .st{font-family:Inter,sans-serif; font-size:13px; font-weight:700; letter-spacing:.05em;
       text-transform:uppercase; color:var(--ink-3)}
-  .st.ok{color:var(--ok)} .st.bad{color:var(--alert)} .st.unknown{color:var(--muted)}
+  .st.ok{color:var(--ok)} .st.bad{color:var(--bad)} .st.unknown{color:var(--ink-3)}
 
-  .fine{font-size:12.5px; color:var(--ink-3); margin:12px 0 0; max-width:58ch}
-  .lede{font-size:13.5px; color:var(--ink-2); margin:0 0 14px; max-width:58ch}
-  footer{margin-top:28px; padding-top:14px; border-top:1px solid var(--rule);
-         font-size:12px; color:var(--ink-3); display:flex; gap:14px; flex-wrap:wrap}
+  /* ---- notes, side by side so lines stay readable across a wide page ---- */
+  .notes{display:grid; grid-template-columns:repeat(auto-fit,minmax(300px,1fr));
+         gap:28px 44px; margin-top:34px}
+  .note h3{font-size:17px; font-weight:700; margin:0 0 6px; color:var(--ink)}
+  .note p{font-size:16.5px; color:var(--ink-2); margin:0; line-height:1.55;
+          text-wrap:pretty}
+
+  footer{border-top:1px solid var(--line); padding:30px 0 48px; font-size:15px;
+         color:var(--ink-3)}
+  footer .bar2{display:flex; gap:28px; flex-wrap:wrap; align-items:center}
+
+  @media (max-width:820px){
+    .grid,.grid.wide{grid-template-columns:1fr 1fr}
+    .grid .f.span{grid-column:1/-1}
+  }
+  @media (max-width:600px){
+    body{font-size:16px}
+    .bar{min-height:64px; gap:10px}
+    nav{margin-left:0; width:100%; gap:0; border-top:1px solid var(--line-2)}
+    nav button{flex:1; font-size:15px; padding:14px 4px; text-align:center}
+    nav button + button{margin-left:0}
+    .grid,.grid.wide{grid-template-columns:1fr}
+  }
   @media (prefers-reduced-motion:reduce){*{animation:none!important; transition:none!important}}
 </style>
 </head>
 <body>
-<div class="wrap">
-  <header>
-    <span class="mark">Beamline</span>
+
+<div class="topbar">
+  <div class="shell bar">
+    <a class="brand" href="./">
+      <svg class="logo" viewBox="0 0 32 32" role="img" aria-label="Beamline">
+        <rect width="32" height="32" rx="7" fill="#0B57D0"/>
+        <!-- Vertex on the tile's centre line at x=16. Each leg sits 50 degrees off
+             vertical, so the bend opens to 100 degrees. -->
+        <path d="M5.3 12.5 L16 21.5 L24 14.8" fill="none" stroke="#fff" stroke-width="3.3"
+              stroke-linecap="round" stroke-linejoin="round"/>
+        <path d="M0 -5 L4.7 3.3 L-4.7 3.3 Z" fill="#fff"
+              transform="translate(25.5 13.5) rotate(50)"/>
+      </svg>
+      <span class="mark">Beamline</span>
+    </a>
     <nav role="tablist">
       <button role="tab" id="tab-draw" aria-selected="true" aria-controls="pane-draw">Draw</button>
       <button role="tab" id="tab-check" aria-selected="false" aria-controls="pane-check">Check</button>
       <button role="tab" id="tab-chain" aria-selected="false" aria-controls="pane-chain">History</button>
     </nav>
-  </header>
-  <p class="tagline">Provably fair draws. Every result comes from a public, signed pulse,
-  so anyone can re-run it themselves. No account, nothing to install.</p>
+  </div>
+</div>
 
-  <!-- ============ DRAW ============ -->
-  <div class="pane" id="pane-draw" role="tabpanel" aria-labelledby="tab-draw">
+<div class="shell hero">
+  <h1>Provably fair draws.</h1>
+  <p class="sub">Every result comes from a public, signed pulse. Anyone can re-run it and
+  get the same answer, with no account and nothing to install.</p>
+</div>
+
+<!-- ============ DRAW ============ -->
+<div class="pane" id="pane-draw" role="tabpanel" aria-labelledby="tab-draw">
+  <div class="band"><div class="shell">
+    <h2 class="panetitle">Run a draw</h2>
+    <p class="panelede">Name it, say how many entrants and how many winners, and press the
+    button.</p>
+
     <div class="card">
       <div class="grid">
-        <div class="f" style="grid-column:span 2">
-          <label for="tag">Draw name</label>
-          <input id="tag" value="spring-giveaway-2026" spellcheck="false" maxlength="120">
-        </div>
+        <div class="f span"><label for="tag">Draw name</label>
+          <input id="tag" value="spring-giveaway-2026" spellcheck="false" maxlength="120"></div>
         <div class="f"><label for="entrants">Entrants</label>
           <input id="entrants" type="number" value="4820" min="1" max="10000000"></div>
         <div class="f"><label for="count">Winners</label>
@@ -172,27 +224,42 @@
         <button class="chip" id="again">Run again</button>
         <button class="chip" id="rename">Change the name</button>
       </div>
-
       <div class="winners" id="winners"></div>
       <div class="stamp">
         <span class="badge" id="stamp-badge">&nbsp;</span>
         <span id="stamp-text">&nbsp;</span>
+        <span id="stamp-note"></span>
       </div>
     </div>
-    <p class="fine">Same name, same pulse, same winners &mdash; every time, for anyone.
-    Change one character of the name and they are completely different &mdash; which is
-    exactly why reproducing the numbers is not enough. Anyone holding a published pulse
-    can try names until one crowns the entrant they wanted, and every one of those
-    results verifies. The name has to be registered <em>before</em> the pulse exists.
-    This draw was: change it and watch <b>Announced first</b> fail.</p>
-  </div>
 
-  <!-- ============ CHECK ============ -->
-  <div class="pane" id="pane-check" role="tabpanel" aria-labelledby="tab-check" hidden>
-    <p class="lede">The pulse behind your draw. Edit any field, or use a shortcut, and
-    re-run the checks.</p>
+    <div class="notes">
+      <div class="note">
+        <h3>The same every time</h3>
+        <p>Same name and same pulse always give the same winners, for you and for
+        everyone else. Change one character of the name and the winners are completely
+        different.</p>
+      </div>
+      <div class="note">
+        <h3>Registered in advance</h3>
+        <p>Reproducing the numbers is not enough on its own. Anyone holding a published
+        pulse can try names until one crowns the entrant they wanted, and every one of
+        those results verifies perfectly. The name has to be registered <em>before</em>
+        the pulse exists. This draw was &mdash; change the name and watch
+        <b>Announced first</b> fail.</p>
+      </div>
+    </div>
+  </div></div>
+</div>
+
+<!-- ============ CHECK ============ -->
+<div class="pane" id="pane-check" role="tabpanel" aria-labelledby="tab-check" hidden>
+  <div class="band"><div class="shell">
+    <h2 class="panetitle">Try to change the result</h2>
+    <p class="panelede">This is the pulse your draw came from. Edit any field, or use one
+    of the shortcuts, then run the checks again.</p>
+
     <div class="card">
-      <div class="grid">
+      <div class="grid wide">
         <div class="f"><label for="f-round">Round</label>
           <input id="f-round" type="number" data-f="round"></div>
         <div class="f"><label for="f-ts">Timestamp (ms)</label>
@@ -200,12 +267,12 @@
         <div class="f"><label for="f-period">Period (s)</label>
           <input id="f-period" type="number" data-f="period_seconds"></div>
       </div>
-      <div class="grid" style="margin-top:12px; grid-template-columns:1fr">
+      <div class="grid one" style="margin-top:20px">
         <div class="f"><label for="f-local">Entropy value</label>
           <input id="f-local" data-f="local_value" spellcheck="false"></div>
         <div class="f"><label for="f-prev">Previous pulse</label>
           <input id="f-prev" data-f="prev_output" spellcheck="false"></div>
-        <div class="f"><label for="f-out">Output hash &mdash; the draw comes from this</label>
+        <div class="f"><label for="f-out">Output hash, which the draw comes from</label>
           <input id="f-out" data-f="output" spellcheck="false"></div>
         <div class="f"><label for="f-sig">Signature</label>
           <input id="f-sig" data-f="signature" spellcheck="false"></div>
@@ -220,15 +287,31 @@
       </div>
       <ul class="checks" id="checks"></ul>
     </div>
-    <p class="fine">Signed with Ed25519 by <span class="mono" id="keyline"></span>.
-    Mixed from a quantum source at ANU and live NOAA space-weather readings, whose public
-    timestamps show the pulse could not have been made earlier.</p>
-  </div>
 
-  <!-- ============ HISTORY ============ -->
-  <div class="pane" id="pane-chain" role="tabpanel" aria-labelledby="tab-chain" hidden>
-    <p class="lede">Ten pulses, each one hashing the pulse before it. Try rewriting the
-    past.</p>
+    <div class="notes">
+      <div class="note">
+        <h3>Signed</h3>
+        <p>Ed25519, by the key <span class="mono" id="keyline"></span>. The key sits inside
+        the signed body, so rotating it is an auditable event rather than a silent
+        break.</p>
+      </div>
+      <div class="note">
+        <h3>Sourced</h3>
+        <p>Mixed from a quantum source at the Australian National University and from live
+        NOAA space weather readings, whose public timestamps show the pulse could not have
+        been made earlier.</p>
+      </div>
+    </div>
+  </div></div>
+</div>
+
+<!-- ============ HISTORY ============ -->
+<div class="pane" id="pane-chain" role="tabpanel" aria-labelledby="tab-chain" hidden>
+  <div class="band"><div class="shell">
+    <h2 class="panetitle">Rewrite the past</h2>
+    <p class="panelede">Ten pulses, each one hashing the pulse before it. Break one and see
+    how far the damage travels.</p>
+
     <div class="card">
       <div class="row" style="margin-top:0">
         <button class="go" id="c-go">Check all ten</button>
@@ -247,18 +330,27 @@
         <span id="c-text">Each pulse is checked against its contents, its predecessor, and the key.</span>
       </div>
     </div>
-    <p class="fine">A chain does not make rewriting history impossible. It makes it
-    impossible to do quietly &mdash; and re-signing what you rewrote needs a private key.
-    It does not prove a pulse was never withheld, which is why draw names are published
-    in advance.</p>
-  </div>
 
-  <footer>
-    <span>Beamline</span>
-    <span>Ten real signed pulses, verified in your browser</span>
-    <span><a href="https://github.com/pragyaangaur/Beamline">Source</a></span>
-  </footer>
+    <div class="notes">
+      <div class="note">
+        <h3>Rewriting is loud</h3>
+        <p>A chain does not make rewriting history impossible. It makes it impossible to do
+        quietly, because every pulse after the one you changed stops fitting.</p>
+      </div>
+      <div class="note">
+        <h3>Signatures do not come back</h3>
+        <p>Re-signing what you rewrote needs the private key. Withholding a pulse is a
+        separate gap, which is why draw names are published in advance.</p>
+      </div>
+    </div>
+  </div></div>
 </div>
+
+<footer><div class="shell bar2">
+  <span>Beamline</span>
+  <span>Ten real signed pulses, verified in your browser</span>
+  <span><a href="https://github.com/pragyaangaur/Beamline">Source</a></span>
+</div></footer>
 
 <script id="chain-data" type="application/json">{"public_key":"00ac3492b4a97f05e6c07a0afbc65e0cc944a2639cef0b646dc8fd04c84a0cbf","period_seconds":60,"pulses":[{"version":"beamline/pulse/v3","round":1,"timestamp_ms":1787331155501,"period_seconds":60,"prev_output":"00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000","local_value":"83f5c48a4beeab4b46bf816a426ac91628d6dd27004bc1e81a6858ebcd07d3c27509af9ef17923999318178f73202c5233385976083362eda40eddffe5602b7d","public_key":"00ac3492b4a97f05e6c07a0afbc65e0cc944a2639cef0b646dc8fd04c84a0cbf","provenance":{"local_os":{"at_ms":1787331151500,"bytes":64,"digest":"3f5e0288921ccb678587610e067ced0ceef70a69e4c07b76194afa5149a06d9f","provider":"kernel getrandom(2)"},"anu_qrng":{"at_ms":1787331153510,"bytes":1530,"digest":"c2bb563dcaec7be7077b4429e644f6636ad2c4faf3a4474d32a74c9f5937fd00","provider":"local_archive","blocks":2,"chars":2048,"source_entropy_bits":12241,"remaining_blocks":3898},"astro":{"at_ms":1787331153710,"bytes":871,"digest":"d194b15c2c4b487af7d1a6042c3a94f12fabc0f2bb314f7d136d959b4823a5a3","feeds":{"goes_xray":{"rows":6,"latest_time_tag":"2026-08-21T16:48:00Z"},"solar_wind_plasma":{"rows":6,"latest_time_tag":"2026-08-20T16:51:00"},"solar_wind_mag":{"rows":6,"latest_time_tag":"2026-08-20T16:51:00"}},"advanced":true}},"output":"b14da3fa1d9aac85c5b043bf7928fc5099f3deaaf8c81cc3a68fbaa7bbc49ce1b958f9c72ecccc15379cc81f34881b52335e6002757bd2ebb7eca11d88b025f1","signature":"e2b3bf68eece6219defc74445c492676ae6c7efd36fe62c5b8510c9b85c2b950fe16428fb33da970a7ccbc0f54fdfb7b0126c64379f37fc42958e48694e39601"},{"version":"beamline/pulse/v3","round":2,"timestamp_ms":1787331159504,"period_seconds":60,"prev_output":"b14da3fa1d9aac85c5b043bf7928fc5099f3deaaf8c81cc3a68fbaa7bbc49ce1b958f9c72ecccc15379cc81f34881b52335e6002757bd2ebb7eca11d88b025f1","local_value":"64508a04d54cce9a9556c611428f41ba25aa0e21cf3ed88430c1dd581c250af219374b774eb534fcca807f77f2d0fb91d0956122df4aa42b7e44ef628827b37f","public_key":"00ac3492b4a97f05e6c07a0afbc65e0cc944a2639cef0b646dc8fd04c84a0cbf","provenance":{"local_os":{"at_ms":1787331156501,"bytes":64,"digest":"768429d050f4a4d8eeadf97877c3f43604780502f5f1087aff98edb0a6b29e19","provider":"kernel getrandom(2)"},"anu_qrng":{"at_ms":1787331157521,"bytes":1530,"digest":"d056a07c7183f523a14ef90129f035b5dd8fb80672ff520020cccc7ad520754b","provider":"local_archive","blocks":2,"chars":2048,"source_entropy_bits":12241,"remaining_blocks":3894},"astro":{"at_ms":1787331153710,"bytes":871,"digest":"d194b15c2c4b487af7d1a6042c3a94f12fabc0f2bb314f7d136d959b4823a5a3","feeds":{"goes_xray":{"rows":6,"latest_time_tag":"2026-08-21T16:48:00Z"},"solar_wind_plasma":{"rows":6,"latest_time_tag":"2026-08-20T16:51:00"},"solar_wind_mag":{"rows":6,"latest_time_tag":"2026-08-20T16:51:00"}},"advanced":true}},"output":"65dee7fd8a425bb1587921e74469e2b371b3a93ad62cbb8772405d5f966e5eea53cf0dc8b89a85082425aa85d7263b3007b3d9ef1326dd5eb86139f3d1433007","signature":"472e6bdc7e5abcc5da59808c93dbc31e0f8d4185dd48f076322e10e7ed5b27c926db935da6f28156f3b0f750f7c4597332c6cf1776ce1fb22a4a530d57a94100"},{"version":"beamline/pulse/v3","round":3,"timestamp_ms":1787331163507,"period_seconds":60,"prev_output":"65dee7fd8a425bb1587921e74469e2b371b3a93ad62cbb8772405d5f966e5eea53cf0dc8b89a85082425aa85d7263b3007b3d9ef1326dd5eb86139f3d1433007","local_value":"0b27a968915cbd361cd8c2e6cb19e338cf51c0e49a2cbaced2099ff7c35e900a5b6406492370c5db81b99ed273be29d69ddefba3d373ce37cf2cfc5d25e197b7","public_key":"00ac3492b4a97f05e6c07a0afbc65e0cc944a2639cef0b646dc8fd04c84a0cbf","provenance":{"local_os":{"at_ms":1787331161503,"bytes":64,"digest":"26c8ec4ff3edb2b289cc2227fb31caeaa4e5e651a5387bb9f08a471ac589c6a9","provider":"kernel getrandom(2)"},"anu_qrng":{"at_ms":1787331161534,"bytes":1530,"digest":"fa9f26c6135c2064dd3344b3f2de90a53239da12a6c3cf629488dd2340aef255","provider":"local_archive","blocks":2,"chars":2048,"source_entropy_bits":12241,"remaining_blocks":3890},"astro":{"at_ms":1787331153710,"bytes":871,"digest":"d194b15c2c4b487af7d1a6042c3a94f12fabc0f2bb314f7d136d959b4823a5a3","feeds":{"goes_xray":{"rows":6,"latest_time_tag":"2026-08-21T16:48:00Z"},"solar_wind_plasma":{"rows":6,"latest_time_tag":"2026-08-20T16:51:00"},"solar_wind_mag":{"rows":6,"latest_time_tag":"2026-08-20T16:51:00"}},"advanced":true}},"output":"e90dac25f2b4537fe33cddeedb92967a3c83251c6a7213dd81ce561fa99a55aa47892f946d40d41b05d806bcc5997ed5cfc57e360d2a9a4d06157a1e0b01d93a","signature":"e46ba8b21ef157125b494e5bd17a21079498206338827096c8b5052b9833e7e0455eba7c5fc74a0482d51180a91b073a72a871a65b01c4feac960346112d3b0d"},{"version":"beamline/pulse/v3","round":4,"timestamp_ms":1787331167510,"period_seconds":60,"prev_output":"e90dac25f2b4537fe33cddeedb92967a3c83251c6a7213dd81ce561fa99a55aa47892f946d40d41b05d806bcc5997ed5cfc57e360d2a9a4d06157a1e0b01d93a","local_value":"cc3cf7a5ceec10e253fa5ae8d4521007aa86d63af4b41ab3fd119dfd891212145f4922f3be65e1fdc14451f1528a0dba1f4809fe9632a3bfe8e5533f1a79c97f","public_key":"00ac3492b4a97f05e6c07a0afbc65e0cc944a2639cef0b646dc8fd04c84a0cbf","provenance":{"local_os":{"at_ms":1787331166504,"bytes":64,"digest":"f1ce864c5761882046a0850e6850fa447c5ceee79a8e9b314e63a85ff03b366a","provider":"kernel getrandom(2)"},"anu_qrng":{"at_ms":1787331165546,"bytes":1530,"digest":"b638af11f38f6855fce6a4b4afa5e5f60eb626961faad62be6910bc7ea850291","provider":"local_archive","blocks":2,"chars":2048,"source_entropy_bits":12241,"remaining_blocks":3886},"astro":{"at_ms":1787331153710,"bytes":871,"digest":"d194b15c2c4b487af7d1a6042c3a94f12fabc0f2bb314f7d136d959b4823a5a3","feeds":{"goes_xray":{"rows":6,"latest_time_tag":"2026-08-21T16:48:00Z"},"solar_wind_plasma":{"rows":6,"latest_time_tag":"2026-08-20T16:51:00"},"solar_wind_mag":{"rows":6,"latest_time_tag":"2026-08-20T16:51:00"}},"advanced":true}},"output":"397d14d1f7a65482797253589a4dd9d14264b26f9595bb44c8249346b6a49090cc82037db792b26391ddbe9ecc67949fe86bcfc7c79406fc586be720d549f90d","signature":"28df4332f8531c1058e11b0a64f90615f5c08e322b6eaf894ce4e341024a834b44667ecf7bb3f1225c18e8d90ee0feda45691f2a6f7d8d7a0f72be2a0dfd720b"},{"version":"beamline/pulse/v3","round":5,"timestamp_ms":1787331171512,"period_seconds":60,"prev_output":"397d14d1f7a65482797253589a4dd9d14264b26f9595bb44c8249346b6a49090cc82037db792b26391ddbe9ecc67949fe86bcfc7c79406fc586be720d549f90d","local_value":"885d2fb82dcc739753ebdfa1db18009e9ab8ca2027d75de597223ec24993010b99e5a54d67b5976f1e5ccba1d3044470f8c6d1049d530eefd49b69f75173dfdc","public_key":"00ac3492b4a97f05e6c07a0afbc65e0cc944a2639cef0b646dc8fd04c84a0cbf","provenance":{"local_os":{"at_ms":1787331171505,"bytes":64,"digest":"95857ec8989d34f7a76ec2eaadf5a0d025732e4a43281a4db1c57e4f66868df9","provider":"kernel getrandom(2)"},"anu_qrng":{"at_ms":1787331169560,"bytes":1530,"digest":"ca0f4b667b48348b3e3f181897bb907d1eef95299cf6dfb23fe208d89b231830","provider":"local_archive","blocks":2,"chars":2048,"source_entropy_bits":12241,"remaining_blocks":3882},"astro":{"at_ms":1787331153710,"bytes":871,"digest":"d194b15c2c4b487af7d1a6042c3a94f12fabc0f2bb314f7d136d959b4823a5a3","feeds":{"goes_xray":{"rows":6,"latest_time_tag":"2026-08-21T16:48:00Z"},"solar_wind_plasma":{"rows":6,"latest_time_tag":"2026-08-20T16:51:00"},"solar_wind_mag":{"rows":6,"latest_time_tag":"2026-08-20T16:51:00"}},"advanced":true}},"output":"5d0843fdfd0398db8466c0a099d7e10026d9320fccab9975ed503b7b60e0433dad428c813576c7ee89e72c9b255bae93cf4ffe04313a8a91b0792e4a1b4a3114","signature":"83b0f2b4f13daf56831bce975bc2ecedc3d01e33bad3c0620c6424f8ea4e9849b1d2c077947f9c92ce775b6f9cfe1a2fdfa4806bd76699f0d899c0f518b2d508"},{"version":"beamline/pulse/v3","round":6,"timestamp_ms":1787331175514,"period_seconds":60,"prev_output":"5d0843fdfd0398db8466c0a099d7e10026d9320fccab9975ed503b7b60e0433dad428c813576c7ee89e72c9b255bae93cf4ffe04313a8a91b0792e4a1b4a3114","local_value":"181963b972cf4d3ce79655849a022c601e59f7059ef07b191d199147faf11d560895bd8e014911cec325cc3fa38a0ff0de7aafd7335a48e6f5a0247f1d1f39fa","public_key":"00ac3492b4a97f05e6c07a0afbc65e0cc944a2639cef0b646dc8fd04c84a0cbf","provenance":{"local_os":{"at_ms":1787331171505,"bytes":64,"digest":"95857ec8989d34f7a76ec2eaadf5a0d025732e4a43281a4db1c57e4f66868df9","provider":"kernel getrandom(2)"},"anu_qrng":{"at_ms":1787331173619,"bytes":765,"digest":"9ba9d963b25aa48b50501452cd1552ea4fd07e9492bfb9cd5a6366efd6ee5f3a","provider":"anu_public_endpoint","chars":1024},"astro":{"at_ms":1787331153710,"bytes":871,"digest":"d194b15c2c4b487af7d1a6042c3a94f12fabc0f2bb314f7d136d959b4823a5a3","feeds":{"goes_xray":{"rows":6,"latest_time_tag":"2026-08-21T16:48:00Z"},"solar_wind_plasma":{"rows":6,"latest_time_tag":"2026-08-20T16:51:00"},"solar_wind_mag":{"rows":6,"latest_time_tag":"2026-08-20T16:51:00"}},"advanced":true}},"output":"28273665b9a3a99c0fe9fe7fe2b17f2efa99b328c0e9f9e7162a15032910b4c03ba4f086974195919ff370a5e2b90b3679bbdf58af3e6f009ffc2f7d30811830","signature":"3e9758560973b9240ca0b8084bea7a50a7aede43430fd57b12f3744d1ea54bc163c6645b0efddd62c5b83e18ef71b8b72a5bd396e3ef0b68b8f29fa12b655403"},{"version":"beamline/pulse/v3","round":7,"timestamp_ms":1787331179516,"period_seconds":60,"prev_output":"28273665b9a3a99c0fe9fe7fe2b17f2efa99b328c0e9f9e7162a15032910b4c03ba4f086974195919ff370a5e2b90b3679bbdf58af3e6f009ffc2f7d30811830","local_value":"f83c50498fa13389d7bb5e750eb720147770c49555b185ded31834804c03402911ad65358b97241a9863c18affac3425f4a48e1fb5ebae25bbbcf0ba7fe84d8b","public_key":"00ac3492b4a97f05e6c07a0afbc65e0cc944a2639cef0b646dc8fd04c84a0cbf","provenance":{"local_os":{"at_ms":1787331176506,"bytes":64,"digest":"3a126e09dde9f9f55b945d074776e235645b25d41bb4cd62d8bf5b29358657f3","provider":"kernel getrandom(2)"},"anu_qrng":{"at_ms":1787331177585,"bytes":1530,"digest":"320529bd4558c375bb4d3b267d48bcd2407a5ed3cf1fd2db1c28d2f37a6c2b72","provider":"local_archive","blocks":2,"chars":2048,"source_entropy_bits":12241,"remaining_blocks":3874},"astro":{"at_ms":1787331153710,"bytes":871,"digest":"d194b15c2c4b487af7d1a6042c3a94f12fabc0f2bb314f7d136d959b4823a5a3","feeds":{"goes_xray":{"rows":6,"latest_time_tag":"2026-08-21T16:48:00Z"},"solar_wind_plasma":{"rows":6,"latest_time_tag":"2026-08-20T16:51:00"},"solar_wind_mag":{"rows":6,"latest_time_tag":"2026-08-20T16:51:00"}},"advanced":true}},"output":"3c3c248bc728e8353d6613f9a3448349d22369660186a6ddeacc73992159c79b4e3f2385a060bab14f31967efa490e8aea00ed26a2c86ef582bcb6aa668a26c0","signature":"d411e576288b16330a1d59711690673fdac1c3b38bfe7cfce5519d5f11f9726dcedc4d305b76d84a93f3c5e29c4e646596f7d2185468c611335f32290d4d1305"},{"version":"beamline/pulse/v3","round":8,"timestamp_ms":1787331183518,"period_seconds":60,"prev_output":"3c3c248bc728e8353d6613f9a3448349d22369660186a6ddeacc73992159c79b4e3f2385a060bab14f31967efa490e8aea00ed26a2c86ef582bcb6aa668a26c0","local_value":"a02a69f6606b0ae79f51843c0533cc45ecf5916aec1dff22c1bc84fc7bb0b828b17f39b8bfe4d6cb2f2a6441c7518c2ae7907a80d16afdd58c1f5a2e1a206a4f","public_key":"00ac3492b4a97f05e6c07a0afbc65e0cc944a2639cef0b646dc8fd04c84a0cbf","provenance":{"local_os":{"at_ms":1787331181507,"bytes":64,"digest":"aa95415cc73638742d674b879f0a01ac3e77a5b9dbf22627493e9acb38625dc6","provider":"kernel getrandom(2)"},"anu_qrng":{"at_ms":1787331181597,"bytes":1530,"digest":"d90a7ee0aadcda8c955cfc3a34a34833162fe5adaca1eb89dff3436947e16d10","provider":"local_archive","blocks":2,"chars":2048,"source_entropy_bits":12241,"remaining_blocks":3870},"astro":{"at_ms":1787331153710,"bytes":871,"digest":"d194b15c2c4b487af7d1a6042c3a94f12fabc0f2bb314f7d136d959b4823a5a3","feeds":{"goes_xray":{"rows":6,"latest_time_tag":"2026-08-21T16:48:00Z"},"solar_wind_plasma":{"rows":6,"latest_time_tag":"2026-08-20T16:51:00"},"solar_wind_mag":{"rows":6,"latest_time_tag":"2026-08-20T16:51:00"}},"advanced":true}},"output":"d6a090930a42d53e6d432617833928accfef024a1c9a195a3d0c9c947d4ffdc3f92d613369beec9cd123f7dedea1f9ae0e991b9fff2b1fd7a6cefe889f1de042","signature":"9fb3ebd9165000636949611f84630749ec2f501efc7f39668b1397aac28bcf3d6f6f48a2dc1a4c86cd825caf5ba709015ad29573683335c91023e5900e948905"},{"version":"beamline/pulse/v3","round":9,"timestamp_ms":1787331187521,"period_seconds":60,"prev_output":"d6a090930a42d53e6d432617833928accfef024a1c9a195a3d0c9c947d4ffdc3f92d613369beec9cd123f7dedea1f9ae0e991b9fff2b1fd7a6cefe889f1de042","local_value":"5a269819d612881f0cd3b0a7aaaffb594e658419693b103bf904046af84dcc6a4672694327528eb2afdff2939255a451dded6b81a6553d2969e493721d77f5da","public_key":"00ac3492b4a97f05e6c07a0afbc65e0cc944a2639cef0b646dc8fd04c84a0cbf","provenance":{"local_os":{"at_ms":1787331186509,"bytes":64,"digest":"9eb4a99ca0291a66c5df6a2d750a1089855f822bc5296952ace7fcbf82333908","provider":"kernel getrandom(2)"},"anu_qrng":{"at_ms":1787331185612,"bytes":1530,"digest":"031acbed1ff0a21a00f35c6b877dec6a42d2406d310bc6a3bb4036c56b199d0d","provider":"local_archive","blocks":2,"chars":2048,"source_entropy_bits":12241,"remaining_blocks":3866},"astro":{"at_ms":1787331153710,"bytes":871,"digest":"d194b15c2c4b487af7d1a6042c3a94f12fabc0f2bb314f7d136d959b4823a5a3","feeds":{"goes_xray":{"rows":6,"latest_time_tag":"2026-08-21T16:48:00Z"},"solar_wind_plasma":{"rows":6,"latest_time_tag":"2026-08-20T16:51:00"},"solar_wind_mag":{"rows":6,"latest_time_tag":"2026-08-20T16:51:00"}},"advanced":true}},"output":"eebde5fa840f1036a697a9f8f721277834b0fe25c1aa5b96ea339bc71425777ba575a7403155b9788613c12f7a7eafd8af4fe87ef8aa5c35abec3082ae4d26b1","signature":"0bb7fa0347d381e66fa4d00a8ea9459c0361ee3a43324bfea33178b71e454a1ecbd0eb9b1a6469a93604f9b1cd83d48853ca8149625dbff2064e8350c636f30e"},{"version":"beamline/pulse/v3","round":10,"timestamp_ms":1787331191525,"period_seconds":60,"prev_output":"eebde5fa840f1036a697a9f8f721277834b0fe25c1aa5b96ea339bc71425777ba575a7403155b9788613c12f7a7eafd8af4fe87ef8aa5c35abec3082ae4d26b1","local_value":"337e63751afb37b9eb6d9a55c1a89815ca6caa18c8eea4d2e1fea2e5698f9cedbf255159519863d6be60e57e266361c8d4fa831e20758c4d87564a530f59e0e9","public_key":"00ac3492b4a97f05e6c07a0afbc65e0cc944a2639cef0b646dc8fd04c84a0cbf","provenance":{"local_os":{"at_ms":1787331191510,"bytes":64,"digest":"783f75e245853b2de37344fe6b70e17c852bb9887f44502dfb565e355feabb4e","provider":"kernel getrandom(2)"},"anu_qrng":{"at_ms":1787331189624,"bytes":1530,"digest":"d2c0e587ceb4e12f84ced5ca97b5eb8448544e5e88d9ff5ccf333d942998ad0c","provider":"local_archive","blocks":2,"chars":2048,"source_entropy_bits":12241,"remaining_blocks":3862},"astro":{"at_ms":1787331153710,"bytes":871,"digest":"d194b15c2c4b487af7d1a6042c3a94f12fabc0f2bb314f7d136d959b4823a5a3","feeds":{"goes_xray":{"rows":6,"latest_time_tag":"2026-08-21T16:48:00Z"},"solar_wind_plasma":{"rows":6,"latest_time_tag":"2026-08-20T16:51:00"},"solar_wind_mag":{"rows":6,"latest_time_tag":"2026-08-20T16:51:00"}},"advanced":true}},"output":"2526929b3f183f68b3533338dc3e5b92bf27694dd0046ae6521a96a5236d778ddd41d262d7b804ba2e669aa409d737133e7845669e247b313cf16adde2a25cdb","signature":"37595be07f8308ec2ec34129f6ecd88a7a9365d2c5dccd93889513188be4b7462412ce41f17a6dcfe868191b7a0ee9db8a877cae63239d82abb7d1bb24793507"}],"commitment":{"version":"beamline/commitment/v1","commit_id":"6a924f2499d8eff333bdb30d594e3a0b","tag":"spring-giveaway-2026","target_round":10,"created_at_ms":1787331191524,"created_after_round":9,"public_key":"00ac3492b4a97f05e6c07a0afbc65e0cc944a2639cef0b646dc8fd04c84a0cbf","signature":"41e6bf2cf87c676758e8974c8c54a5ace32e72ffd24b4a5b04beb856b93b3902c97db5694e1810b3e8134ea161ecf650810cd04c85284291efcf416a69571f07"}}</script>
 <script>
@@ -275,6 +367,8 @@ const enc = new TextEncoder();
 let working = structuredClone(PUBLISHED);
 let current = working[working.length - 1];
 let lastDraw = null;
+let runs = 0;          // how many draws the visitor has asked for
+let lastKey = null;    // the inputs behind the previous one
 
 /* ---------- bytes ---------- */
 const hex = (b) => Array.from(b, (x) => x.toString(16).padStart(2, "0")).join("");
@@ -512,25 +606,55 @@ function params() {
   return { tag: $("tag").value || "untitled-draw", entrants, count };
 }
 
+/* Before the first press. Without this the page would open on a finished draw,
+   and pressing the button would replace it with the identical result. */
+function emptyState() {
+  $("winners").innerHTML =
+    `<div class="empty">No draw yet. Press <b>Run the draw</b> to pick winners
+     from pulse #${current.round}.</div>`;
+  $("stamp-badge").className = "badge";
+  $("stamp-badge").textContent = "Ready";
+  $("stamp-text").textContent =
+    `Pulse #${current.round}, published ${utc(current.timestamp_ms)}.`;
+  $("stamp-note").textContent = "";
+}
+
 async function runDraw(flash) {
   const p = params();
+  const label = $("go").textContent;
   $("go").disabled = true;
+  $("go").textContent = "Drawing";
+
   const winners = await drawFrom(current.output, p.tag, p.count, p.entrants);
   $("winners").innerHTML = winners.map((w, i) =>
     `<div class="w${flash ? " flash" : ""}"><b>Winner ${i + 1}</b>
      <div class="num">#${w.toLocaleString()}</div></div>`).join("");
+
+  const key = `${p.tag}|${p.entrants}|${p.count}|${current.round}`;
+  const repeat = key === lastKey;
+  runs += 1;
+  lastKey = key;
   lastDraw = { tag: p.tag, entrants: p.entrants, count: p.count, winners };
 
   $("stamp-badge").className = "badge";
   $("stamp-badge").textContent = "Checking";
-  $("stamp-text").textContent = "Verifying the pulse in this browser…";
+  $("stamp-text").textContent = "Verifying the pulse in this browser.";
   const ok = (await runChecks(true)).every((c) => c.ok);
   $("stamp-badge").className = "badge " + (ok ? "ok" : "bad");
   $("stamp-badge").textContent = ok ? "Verified" : "Failed";
   $("stamp-text").innerHTML = ok
     ? `Drawn from pulse <b>#${current.round}</b>, published ${utc(current.timestamp_ms)}.`
-    : `Pulse #${current.round} does not check out — see <b>Check</b>.`;
+    : `Pulse #${current.round} does not check out. Open the Check tab.`;
+
+  // Say what the press did, because a correct repeat looks like nothing happening.
+  $("stamp-note").textContent =
+    runs === 1 ? "" :
+    repeat ? `Run ${runs}. Identical to the last one, and it always will be: the pulse `
+             + `is fixed and the draw is derived from it.`
+           : `Run ${runs}. New inputs, so these winners are unrelated to the last set.`;
+
   $("go").disabled = false;
+  $("go").textContent = label;
 }
 
 /* ================= CHECK ================= */
@@ -565,7 +689,7 @@ async function runChecks(silent) {
     ? { nm: "Contents", ok: false, why: structural }
     : (await recompute(current)) === current.output
     ? { nm: "Contents", ok: true, why: "the pulse hashes to its own output" }
-    : { nm: "Contents", ok: false, why: "edited — the output no longer matches" });
+    : { nm: "Contents", ok: false, why: "edited, so the output no longer matches" });
 
   out.push(!prev
     ? { nm: "Position", ok: true, why: "first pulse loaded; nothing to link to" }
@@ -658,7 +782,7 @@ async function checkChain() {
     : !bad.length
     ? "Every pulse hashes its contents, links to the one before, and is signed by Beamline."
     : onlySigs
-    ? "The history fits together again — and none of the rewritten pulses is signed any more."
+    ? "The history fits together again, and none of the rewritten pulses is signed any more."
     : `Round ${bad[0].round}: ${bad[0].why}. Fixing it breaks the next one, and the next.`;
   $("c-go").disabled = false;
 }
@@ -736,7 +860,8 @@ $("c-reset").addEventListener("click", resetChain);
 
 fill();
 paintChain();
-runDraw(false);
+runChecks(true);
+emptyState();
 </script>
 </body>
 </html>

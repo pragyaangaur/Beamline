@@ -1,7 +1,7 @@
 """Generate the cross-language test vectors for the canonical encoding.
 
 The Python encoder is the reference. These vectors are what the JavaScript verifier
-in `docs/index.html` is checked against, so that "both verifiers agree" is a fact
+in `index.html` is checked against, so that "both verifiers agree" is a fact
 established on every test run rather than an assumption.
 
 Only values that encode successfully are recorded. Values the encoder rejects are

@@ -18,14 +18,14 @@ import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
-const HTML = readFileSync(join(ROOT, "docs", "index.html"), "utf8");
-const BUNDLE = JSON.parse(readFileSync(join(ROOT, "docs", "chain.json"), "utf8"));
+const HTML = readFileSync(join(ROOT, "index.html"), "utf8");
+const BUNDLE = JSON.parse(readFileSync(join(ROOT, "chain.json"), "utf8"));
 
 /* Lift the verifier out of the page. Slicing the real file rather than copying it is
    the point: a copy drifts, and the copy would be the thing under test. */
 function slice(from, to) {
   const a = HTML.indexOf(from), b = HTML.indexOf(to);
-  if (a < 0 || b < 0 || b <= a) throw new Error(`cannot locate ${from} .. ${to} in docs/index.html`);
+  if (a < 0 || b < 0 || b <= a) throw new Error(`cannot locate ${from} .. ${to} in index.html`);
   return HTML.slice(a, b);
 }
 const SOURCE = [
