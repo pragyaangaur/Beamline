@@ -366,8 +366,13 @@ def verify_chain(pulses: list[dict], public_key_hex: str | None = None, *,
             if p["round"] != prev["round"] + 1:
                 return False, (f"chain jumps from round {prev['round']} to {p['round']}; "
                                f"a missing round hides whatever happened in it")
-            if p["timestamp_ms"] <= prev["timestamp_ms"]:
-                return False, (f"round {p['round']} is not later than round "
+            if p["timestamp_ms"] < prev["timestamp_ms"]:
+                # Non-decreasing, not strictly increasing: two pulses can honestly
+                # share a millisecond. Time running backwards cannot happen in a
+                # chain that was built as it went, and is what an archive assembled
+                # afterwards -- rounds written in whatever order the forger produced
+                # them -- gets wrong.
+                return False, (f"round {p['round']} is dated before round "
                                f"{prev['round']}; the chain was not built in order")
             if enforce_period:
                 gap = p["timestamp_ms"] - prev["timestamp_ms"]
