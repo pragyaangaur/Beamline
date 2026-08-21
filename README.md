@@ -417,12 +417,29 @@ Populate it with `python scripts/harvest_anu.py --duration 600`.
 pytest -q
 ```
 
-247 tests cover DRBG correctness and backtracking resistance, pool credit policy, health-test
+298 tests cover DRBG correctness and backtracking resistance, pool credit policy, health-test
 failure detection, statistical bias in every generator (including a chi-square across all 24
 permutations of a 4-element shuffle), the alphabet and packing layer, store deduplication,
 harvester control-law behaviour, key handling, beacon chain integrity and tamper detection,
 signing-key rotation, HTTP auth, quotas and rate limits, the published demo page, and the
 NIST suites against known-bad generators.
+
+[`tests/test_attacks.py`](tests/test_attacks.py) is worth reading on its own. Every test in
+it reproduces an attack that once succeeded against the shipped verifiers — a fabricated
+chain, a chain signed with the attacker's own key, a browser verifier that reported success
+from inside its own catch block, a draw rigged by grinding the tag, an honest pulse the two
+verifiers disagreed about.
+
+```bash
+node scripts/check_js_verifiers.mjs
+```
+
+Attacks all three JavaScript verifiers — the demo page, the published draw record, and the
+JS SDK — by slicing them out of their real files rather than copying them, and checks every
+canonical encoder against
+[shared test vectors](tests/data/canonical_vectors.json). Two implementations of an encoding
+agree until they don't, and the way that surfaces is an honest pulse one verifier calls
+forged.
 
 ```bash
 beamline selftest -n 200000
