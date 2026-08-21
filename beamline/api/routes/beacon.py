@@ -11,7 +11,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
 
 from ... import generators as gen
-from ...entropy.beacon import verify_pulse
+from ...entropy.beacon import verify_commitment, verify_pulse
 from ...service import SERVICE
 from ..deps import Principal, bill, require_key
 
@@ -65,6 +65,78 @@ async def verify(round_no: int):
     )
     return {"round": round_no, "valid": ok, "reason": reason,
             "chain_verified_against": round_no - 1 if prev else "genesis"}
+
+
+class CommitRequest(BaseModel):
+    """Announce a draw against a pulse that has not been emitted yet."""
+
+    tag: str = Field(..., min_length=1, max_length=256,
+                     description="The exact string that names this draw. It is signed "
+                                 "into the receipt, so it cannot be adjusted later.")
+    target_round: int | None = Field(
+        None, ge=1, description="Which future round decides the draw. Defaults to "
+                                "`rounds_ahead` past the latest emitted round.")
+    rounds_ahead: int = Field(1, ge=1, le=10_000,
+                              description="Used when target_round is not given.")
+
+
+@router.post("/commit", status_code=201)
+async def commit(req: CommitRequest, p: Principal = Depends(require_key)):
+    """Register a draw before the pulse that decides it exists.
+
+    Without this, "we announced the draw first" is the runner's word. The receipt
+    returned here is signed by Beamline and records the round the chain had reached
+    at the time, so an entrant can check the announcement predates the outcome
+    instead of taking it on trust.
+    """
+    try:
+        receipt = SERVICE.beacon.commit(
+            req.tag, req.target_round, rounds_ahead=req.rounds_ahead, key_id=p.key_id)
+    except ValueError as e:
+        raise HTTPException(409, str(e)) from e
+
+    bill(p, 32)
+    return {
+        **receipt,
+        "publish_this": (
+            "Post the commit_id and tag now, before round "
+            f"{receipt['target_round']} lands. Anyone can then fetch "
+            f"/v1/beacon/commitment/{receipt['commit_id']} and confirm the draw was "
+            "named while the chain still stood at round "
+            f"{receipt['created_after_round']}."
+        ),
+    }
+
+
+@router.get("/commitment/{commit_id}")
+async def commitment(commit_id: str):
+    """Public: anyone can check what was announced, and when."""
+    receipt = SERVICE.beacon.commitment(commit_id)
+    if receipt is None:
+        raise HTTPException(404, f"no commitment {commit_id!r}")
+    ok, reason = verify_commitment(
+        receipt, SERVICE.beacon.public_key_hex,
+        allow_unsigned=not SERVICE.beacon.public_key_hex)
+    pulse = SERVICE.beacon.get(receipt["target_round"])
+    return {
+        **receipt,
+        "valid": ok,
+        "reason": reason,
+        "target_round_emitted": pulse is not None,
+        "pulse_output": pulse["output"] if pulse else None,
+    }
+
+
+@router.get("/commitments/{round_no}")
+async def commitments_for_round(round_no: int):
+    """Every draw announced against one round.
+
+    Deliberately public and deliberately complete. A runner who announces twenty
+    draws against the same pulse and publishes only the flattering one is doing
+    something this endpoint makes visible.
+    """
+    receipts = SERVICE.db.commitments_for_round(round_no)
+    return {"round": round_no, "count": len(receipts), "commitments": receipts}
 
 
 class DeriveRequest(BaseModel):
