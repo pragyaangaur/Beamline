@@ -21,6 +21,10 @@ def _env_float(name: str, default: float) -> float:
     return float(_env(name, str(default)))
 
 
+def _env_bool(name: str, default: bool = False) -> bool:
+    return _env(name, "1" if default else "").strip().lower() not in ("", "0", "false", "no")
+
+
 @dataclass(frozen=True)
 class Tier:
     """A billing tier. `burst` is the token-bucket depth, `refill` its per-second rate."""
@@ -70,6 +74,11 @@ class Config:
 
     # --- Beacon -----------------------------------------------------------
     beacon_period_seconds: int = _env_int("BEACON_PERIOD_SECONDS", 60)
+    #: Start without a signing key. Off by default, and it should stay off anywhere
+    #: a stranger might rely on the output: unsigned pulses are chained but cannot be
+    #: attributed to anyone, so the beacon's whole claim evaporates while the API goes
+    #: on looking exactly the same. Opt in for local development and CI.
+    allow_unsigned_beacon: bool = _env_bool("ALLOW_UNSIGNED_BEACON")
 
     # --- API --------------------------------------------------------------
     host: str = _env("HOST", "127.0.0.1")
