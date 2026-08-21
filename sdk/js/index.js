@@ -13,7 +13,8 @@
  */
 
 const DEFAULT_BASE = 'https://api.beamline.dev';
-const VERSION_TAG = 'beamline/pulse/v2';
+const VERSION_TAG = 'beamline/pulse/v3';
+const COMMITMENT_VERSION = 'beamline/commitment/v1';
 
 const enc = new TextEncoder();
 
@@ -124,53 +125,275 @@ export async function reproduceShuffle(pulseOutputHex, tag, items) {
   return out;
 }
 
-/** Canonical pulse serialisation. Must byte-match the server: sorted keys, no spaces. */
+/* ---------------------------------------------------------------------------
+ * Canonical bytes.
+ *
+ * This was stableStringify, which is not the function Python's json.dumps is: a
+ * whole-second float serialises as 1787300619.0 there and 1787300619 here, 1e-8
+ * becomes 1e-08 there, and Python escapes non-ASCII where JSON.stringify emits it
+ * raw. Each is an honest pulse that one verifier calls valid and the other calls
+ * forged. So this is an explicit subset -- objects, arrays, strings, safe integers,
+ * booleans, null; ASCII keys sorted bytewise; everything else escaped per UTF-16
+ * code unit -- and anything outside it throws rather than being guessed at.
+ * ------------------------------------------------------------------------- */
+const SHORT_ESCAPES = {
+  '"': '\\"', '\\': '\\\\', '\n': '\\n', '\r': '\\r',
+  '\t': '\\t', '\b': '\\b', '\f': '\\f',
+};
+
+function canonicalString(str) {
+  let out = '"';
+  for (let i = 0; i < str.length; i++) {
+    const ch = str[i];
+    const code = str.charCodeAt(i);
+    if (SHORT_ESCAPES[ch] !== undefined) out += SHORT_ESCAPES[ch];
+    else if (code >= 0x20 && code <= 0x7e) out += ch;
+    else out += `\\u${code.toString(16).padStart(4, '0')}`;
+  }
+  return `${out}"`;
+}
+
+function canonicalEncode(v, path = '$') {
+  if (v === null) return 'null';
+  if (v === true) return 'true';
+  if (v === false) return 'false';
+  if (typeof v === 'number') {
+    if (!Number.isInteger(v)) throw new Error(`${path}: ${v} is not an integer`);
+    if (!Number.isSafeInteger(v)) throw new Error(`${path}: ${v} exceeds 2^53`);
+    return String(v);
+  }
+  if (typeof v === 'string') return canonicalString(v);
+  if (Array.isArray(v)) return `[${v.map((x, i) => canonicalEncode(x, `${path}[${i}]`)).join(',')}]`;
+  if (typeof v === 'object') {
+    return `{${Object.keys(v).sort().map((k) => {
+      if (!/^[\x00-\x7f]*$/.test(k)) throw new Error(`${path}: key ${k} is not ASCII`);
+      return `${canonicalString(k)}:${canonicalEncode(v[k], `${path}.${k}`)}`;
+    }).join(',')}}`;
+  }
+  throw new Error(`${path}: ${typeof v} is not encodable`);
+}
+
 function canonicalBody(pulse) {
-  const body = {
+  return enc.encode(canonicalEncode({
     local_value: pulse.local_value,
     period_seconds: pulse.period_seconds,
     prev_output: pulse.prev_output,
     public_key: pulse.public_key ?? null,
-    provenance: pulse.provenance,
+    provenance: pulse.provenance ?? {},
     round: pulse.round,
     timestamp_ms: pulse.timestamp_ms,
     version: pulse.version,
-  };
-  return enc.encode(stableStringify(body));
+  }));
 }
 
-function stableStringify(v) {
-  if (v === null || typeof v !== 'object') return JSON.stringify(v);
-  if (Array.isArray(v)) return `[${v.map(stableStringify).join(',')}]`;
-  const keys = Object.keys(v).sort();
-  return `{${keys.map((k) => `${JSON.stringify(k)}:${stableStringify(v[k])}`).join(',')}}`;
+function canonicalCommitmentBody(c) {
+  return enc.encode(canonicalEncode({
+    version: c.version,
+    commit_id: c.commit_id,
+    tag: c.tag,
+    target_round: c.target_round,
+    created_at_ms: c.created_at_ms,
+    created_after_round: c.created_after_round,
+    public_key: c.public_key ?? null,
+  }));
 }
 
-export async function checkPulse(pulse, prev = null) {
-  if (pulse.version !== VERSION_TAG) return [false, `unexpected version ${pulse.version}`];
-  const computed = bytesToHex(await sha512(concat(enc.encode(VERSION_TAG), enc.encode('|'),
-                                                  canonicalBody(pulse))));
+const HEX_LENGTHS = {
+  prev_output: 128, local_value: 128, output: 128, public_key: 64, signature: 128,
+};
+const RETIRED_VERSIONS = {
+  'beamline/pulse/v1': 'superseded before public release',
+  'beamline/pulse/v2': 'signed a non-canonical body, so two verifiers could disagree',
+};
+const GENESIS = '0'.repeat(128);
+
+/** Everything the signature check would otherwise have to survive, checked first. */
+function structureError(pulse) {
+  if (!pulse || typeof pulse !== 'object') return 'pulse is not an object';
+  if (RETIRED_VERSIONS[pulse.version]) {
+    return `pulse version ${pulse.version} is retired: ${RETIRED_VERSIONS[pulse.version]}`;
+  }
+  if (pulse.version !== VERSION_TAG) return `unexpected version ${pulse.version}`;
+  for (const f of ['round', 'timestamp_ms', 'period_seconds']) {
+    if (!Number.isSafeInteger(pulse[f])) return `${f} must be an integer`;
+  }
+  if (pulse.round < 1) return 'round must be at least 1';
+  if (pulse.period_seconds < 1) return 'period_seconds must be at least 1';
+  for (const f of ['prev_output', 'local_value', 'output']) {
+    if (typeof pulse[f] !== 'string' || !new RegExp(`^[0-9a-f]{${HEX_LENGTHS[f]}}$`).test(pulse[f])) {
+      return `${f} must be ${HEX_LENGTHS[f]} lowercase hex characters`;
+    }
+  }
+  for (const f of ['public_key', 'signature']) {
+    const v = pulse[f];
+    if (v !== null && v !== undefined
+        && (typeof v !== 'string' || !new RegExp(`^[0-9a-f]{${HEX_LENGTHS[f]}}$`).test(v))) {
+      return `${f} must be ${HEX_LENGTHS[f]} lowercase hex characters`;
+    }
+  }
+  try { canonicalBody(pulse); } catch (e) { return `body is not canonically encodable: ${e.message}`; }
+  if (pulse.round === 1 && pulse.prev_output !== GENESIS) {
+    return 'round 1 does not start from the genesis value';
+  }
+  return null;
+}
+
+function trustAnchor(publicKeyHex, trustedKeys) {
+  if (trustedKeys) return new Set(typeof trustedKeys === 'string' ? [trustedKeys] : trustedKeys);
+  return publicKeyHex ? new Set([publicKeyHex]) : null;
+}
+
+/** True only if the signature is genuinely valid. Any failure to check is a false. */
+async function ed25519Verify(publicKeyHex, signatureHex, message) {
+  const key = await crypto.subtle.importKey(
+    'raw', hexToBytes(publicKeyHex), { name: 'Ed25519' }, false, ['verify']);
+  return crypto.subtle.verify('Ed25519', key, hexToBytes(signatureHex), message);
+}
+
+/**
+ * Verify one pulse. Returns [ok, reason].
+ *
+ * This function did not check signatures at all. It hashed the body and followed the
+ * chain link, which a forger satisfies for free because they control every byte, so a
+ * fabricated chain verified. It also reported a signing-key change as `[true, 'ok
+ * (signing key changed...)']`, which passes an attacker's own key.
+ *
+ * You must now name the key you expect, as `publicKeyHex` or several in `trustedKeys`.
+ * Without one there is nothing to distinguish Beamline's chain from anyone else's, and
+ * that is reported rather than papered over.
+ */
+export async function checkPulse(pulse, publicKeyHex = null, prev = null,
+                                 { trustedKeys = null, allowUnsigned = false } = {}) {
+  const anchor = trustAnchor(publicKeyHex, trustedKeys);
+  if (!anchor && !allowUnsigned) {
+    return [false, 'no trust anchor: pass the signing key you expect, or allowUnsigned'];
+  }
+  const structural = structureError(pulse);
+  if (structural) return [false, structural];
+
+  const computed = bytesToHex(await sha512(concat(
+    enc.encode(pulse.version), enc.encode('|'), canonicalBody(pulse))));
   if (computed !== pulse.output) return [false, 'output hash does not match pulse contents'];
+
   if (prev) {
     if (pulse.prev_output !== prev.output) return [false, `round ${pulse.round} does not link to ${prev.round}`];
     if (pulse.round !== prev.round + 1) return [false, 'round numbers are not consecutive'];
-    // A signing-key change is legitimate but must never pass unremarked: an
-    // unannounced rotation looks identical to a substituted archive.
-    if (pulse.public_key !== prev.public_key) {
-      return [true, `ok (signing key changed at round ${pulse.round})`];
+    if (pulse.timestamp_ms < prev.timestamp_ms) {
+      return [false, `round ${pulse.round} is dated before round ${prev.round}`];
     }
+  }
+
+  if (!pulse.signature) {
+    if (anchor) return [false, 'pulse is unsigned and cannot be attributed to anyone'];
+    return [true, 'structure and chaining are valid; pulse is UNSIGNED and unattributed'];
+  }
+  if (!pulse.public_key) return [false, 'pulse is signed but declares no public key'];
+  if (anchor && !anchor.has(pulse.public_key)) {
+    return [false, `signed by an untrusted key (${pulse.public_key.slice(0, 16)}...). `
+      + 'If this is an announced rotation, name it in trustedKeys.'];
+  }
+  let good = false;
+  try {
+    good = await ed25519Verify(pulse.public_key, pulse.signature, canonicalBody(pulse));
+  } catch (e) {
+    return [false, `signature could not be checked here (${e.message}); this is not a pass`];
+  }
+  if (!good) return [false, 'ed25519 signature is invalid'];
+  if (!anchor) return [true, 'self-consistent and self-signed, but no trust anchor was supplied'];
+  return [true, 'ok'];
+}
+
+export async function checkChain(pulses, publicKeyHex = null,
+                                 { trustedKeys = null, allowUnsigned = false } = {}) {
+  if (!pulses.length) return [false, 'empty chain'];
+  const ordered = [...pulses].sort((a, b) => a.round - b.round);
+  const rotations = [];
+  for (let i = 0; i < ordered.length; i++) {
+    const [ok, why] = await checkPulse(ordered[i], publicKeyHex, i ? ordered[i - 1] : null,
+                                       { trustedKeys, allowUnsigned });
+    if (!ok) return [false, `round ${ordered[i].round}: ${why}`];
+    if (i && ordered[i].public_key !== ordered[i - 1].public_key) rotations.push(ordered[i].round);
+  }
+  let msg = `verified ${ordered.length} pulses`;
+  // Every key here already matched the trust anchor, so this is a rotation you
+  // accepted -- but never a silent one: an unannounced rotation is what an archive
+  // substitution looks like.
+  if (rotations.length) msg += `; signing key changed at round(s) ${rotations.join(', ')}`;
+  return [true, msg];
+}
+
+/**
+ * Verify a commitment receipt: signed by whom, and made before what.
+ *
+ * A pulse cannot testify about when a draw was named, and that is the claim that
+ * matters. Given a published pulse anyone can try draw names until one crowns the
+ * entrant they wanted, and every such result reproduces perfectly.
+ */
+export async function checkCommitment(receipt, publicKeyHex = null,
+                                      { trustedKeys = null, allowUnsigned = false } = {}) {
+  const anchor = trustAnchor(publicKeyHex, trustedKeys);
+  if (!anchor && !allowUnsigned) return [false, 'no trust anchor: pass the signing key you expect'];
+  if (!receipt || typeof receipt !== 'object') return [false, 'commitment is not an object'];
+  if (receipt.version !== COMMITMENT_VERSION) return [false, `unexpected commitment version ${receipt.version}`];
+  for (const f of ['target_round', 'created_at_ms', 'created_after_round']) {
+    if (!Number.isSafeInteger(receipt[f])) return [false, `${f} must be an integer`];
+  }
+  if (typeof receipt.tag !== 'string' || !receipt.tag) return [false, 'tag must be a non-empty string'];
+  if (receipt.target_round <= receipt.created_after_round) {
+    return [false, `commitment names round ${receipt.target_round} but the chain had already `
+      + `reached round ${receipt.created_after_round}; the deciding pulse existed before the `
+      + 'draw was announced'];
+  }
+  if (!receipt.signature) {
+    if (anchor) return [false, 'commitment is unsigned; anyone could have written it afterwards'];
+    return [true, 'well-formed but UNSIGNED: proves nothing about when it was made'];
+  }
+  if (anchor && !anchor.has(receipt.public_key)) {
+    return [false, `commitment signed by an untrusted key (${String(receipt.public_key).slice(0, 16)}...)`];
+  }
+  try {
+    if (!await ed25519Verify(receipt.public_key, receipt.signature, canonicalCommitmentBody(receipt))) {
+      return [false, 'ed25519 signature is invalid'];
+    }
+  } catch (e) {
+    return [false, `signature could not be checked here (${e.message}); this is not a pass`];
   }
   return [true, 'ok'];
 }
 
-export async function checkChain(pulses) {
-  if (!pulses.length) return [false, 'empty chain'];
-  const ordered = [...pulses].sort((a, b) => a.round - b.round);
-  for (let i = 0; i < ordered.length; i++) {
-    const [ok, why] = await checkPulse(ordered[i], i ? ordered[i - 1] : null);
-    if (!ok) return [false, `round ${ordered[i].round}: ${why}`];
+/**
+ * The whole question in one call: was this draw fair?
+ *
+ * Four things have to hold, and checking three of them is how people convince
+ * themselves of something untrue -- the pulse is authentic, the receipt is authentic
+ * and predates it, the receipt names this exact draw, and the result reproduces.
+ */
+export async function checkDraw(pulse, commitment, result, publicKeyHex,
+                                { kind = 'integers', items = null, count = 1,
+                                  min = 0, max = 100, prev = null, trustedKeys = null } = {}) {
+  const [pulseOk, pulseWhy] = await checkPulse(pulse, publicKeyHex, prev, { trustedKeys });
+  if (!pulseOk) return [false, `pulse: ${pulseWhy}`];
+
+  const [commitOk, commitWhy] = await checkCommitment(commitment, publicKeyHex, { trustedKeys });
+  if (!commitOk) return [false, `commitment: ${commitWhy}`];
+
+  if (commitment.target_round !== pulse.round) {
+    return [false, `commitment names round ${commitment.target_round} but the result was `
+      + `drawn from round ${pulse.round}`];
   }
-  return [true, `verified ${ordered.length} pulses`];
+
+  let expected;
+  if (kind === 'integers') expected = await reproduceIntegers(pulse.output, commitment.tag, count, min, max);
+  else if (kind === 'shuffle') expected = await reproduceShuffle(pulse.output, commitment.tag, items);
+  else return [false, `checkDraw cannot reproduce kind ${kind}`];
+
+  if (JSON.stringify(expected) !== JSON.stringify(result)) {
+    return [false, `result does not match the pulse: published ${JSON.stringify(result)}, `
+      + `recomputed ${JSON.stringify(expected)}`];
+  }
+  return [true, `round ${pulse.round} is authentic, tag "${commitment.tag}" was committed at `
+    + `round ${commitment.created_after_round} before that pulse existed, and the result `
+    + 'reproduces exactly'];
 }
 
 export class Beamline {
@@ -260,30 +483,87 @@ export class Beamline {
 
   latestPulse() { return this.#request('GET', '/v1/beacon/latest'); }
 
-  async verifyChain({ start = 1, count = 100 } = {}) {
-    const { pulses } = await this.#request('GET', '/v1/beacon/chain', { params: { start, count } });
-    return checkChain(pulses);
+  pulse(round) { return this.#request('GET', `/v1/beacon/pulse/${round}`); }
+
+  async publicKey() {
+    return (await this.#request('GET', '/v1/beacon/public-key')).public_key;
   }
 
-  async fairDraw({ tag, count = 1, min = 0, max = 100, round = null, kind = 'integers', items = null }) {
-    if (round === null) round = (await this.latestPulse()).round;
+  /** Announce a draw against a round that has not been emitted yet. */
+  commit(tag, { targetRound = null, roundsAhead = 1 } = {}) {
+    const body = { tag, rounds_ahead: roundsAhead };
+    if (targetRound !== null) body.target_round = targetRound;
+    return this.#request('POST', '/v1/beacon/commit', { body });
+  }
+
+  commitment(commitId) { return this.#request('GET', `/v1/beacon/commitment/${commitId}`); }
+
+  async waitForRound(roundNo, { poll = 2000, timeout = 300000 } = {}) {
+    const deadline = Date.now() + timeout;
+    while (Date.now() < deadline) {
+      if ((await this.latestPulse()).round >= roundNo) return this.pulse(roundNo);
+      await new Promise((r) => setTimeout(r, poll));
+    }
+    throw new Error(`round ${roundNo} was not published within ${timeout}ms`);
+  }
+
+  /**
+   * Pull a run of pulses and check it locally.
+   *
+   * `publicKey` defaults to the server's own, which checks only that the server
+   * agrees with itself. Pass a key you recorded out of band for a real answer.
+   */
+  async verifyChain({ start = 1, count = 100, publicKey = null, trustedKeys = null } = {}) {
+    const { pulses } = await this.#request('GET', '/v1/beacon/chain', { params: { start, count } });
+    return checkChain(pulses, publicKey ?? await this.publicKey(), { trustedKeys });
+  }
+
+  /**
+   * Announce a draw, wait for its pulse, and derive the result.
+   *
+   * Commits first by default. Deriving from a pulse that already exists is not a
+   * fair draw: with the pulse in hand a runner can try tag spellings until one names
+   * the winner they want -- a hundred entrants costs about a hundred tries -- or keep
+   * the tag and choose which pulse to call the draw. Both verify perfectly.
+   *
+   * `commit: false` derives from an existing pulse. `verify()` then returns false,
+   * because the numbers reproducing was never the question.
+   */
+  async fairDraw({ tag, count = 1, min = 0, max = 100, round = null, kind = 'integers',
+                   items = null, commit = true, timeout = 300000 }) {
+    let receipt = null;
+    if (commit) {
+      receipt = await this.commit(tag, round === null ? {} : { targetRound: round });
+      round = receipt.target_round;
+      await this.waitForRound(round, { timeout });
+    } else if (round === null) {
+      round = (await this.latestPulse()).round;
+    }
+
     const body = { round, tag, kind, count, min, max };
     if (items) body.items = items;
+    if (receipt) body.commit_id = receipt.commit_id;
     const r = await this.#request('POST', '/v1/beacon/derive', { body });
+
+    const pulse = await this.pulse(r.round);
+    const publicKey = await this.publicKey();
     return {
       ...r,
       kind,
-      verify: async () => {
-        if (kind === 'integers') {
-          const local = await reproduceIntegers(r.pulse_output, tag, count, min, max);
-          return JSON.stringify(local) === JSON.stringify(r.data);
+      pulse,
+      committed: !!r.commitment,
+      /** [ok, reason] for the whole question, not just the arithmetic. */
+      check: async () => {
+        if (!r.commitment) {
+          return [false, 'this draw was not committed: the numbers reproduce, but nothing '
+            + 'shows the tag and round were not chosen with the pulse already published'];
         }
-        if (kind === 'shuffle') {
-          const local = await reproduceShuffle(r.pulse_output, tag, items);
-          return JSON.stringify(local) === JSON.stringify(r.data);
-        }
-        throw new Error(`no local verifier for kind=${kind}`);
+        return checkDraw(pulse, r.commitment, r.data, publicKey, { kind, items, count, min, max });
       },
+      verify: async () => (await (async () => {
+        if (!r.commitment) return [false, 'not committed'];
+        return checkDraw(pulse, r.commitment, r.data, publicKey, { kind, items, count, min, max });
+      })())[0],
     };
   }
 
