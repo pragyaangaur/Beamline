@@ -48,6 +48,15 @@ async def build(rounds: int, spacing: float, period: int) -> dict:
 
     svc = BeamlineService()
     await svc.start()
+
+    # Stop the service emitting on its own schedule. This script needs the round
+    # numbers it hands out to be the round numbers that land -- a commitment names a
+    # specific future round, and a background pulse arriving between the commit and
+    # the emit would make the receipt name a round that is already in the past.
+    for task in svc._tasks:
+        if task.get_name() == "pulse":
+            task.cancel()
+
     try:
         # Give the network sources a chance to land at least one sample each, so the
         # provenance blocks on the published pulses are real rather than local-only.
@@ -64,9 +73,6 @@ async def build(rounds: int, spacing: float, period: int) -> dict:
             print(f"  round {i + 1}/{rounds}", file=sys.stderr)
             if i < rounds - 1:
                 await asyncio.sleep(spacing)
-        # Read the chain back from the database rather than collecting the return
-        # values: the service's own pulse loop may have emitted alongside us, and a
-        # chain with a hole in it would fail the consecutive-round check on the site.
         pulses = svc.db.pulse_range(1, rounds)
     finally:
         await svc.stop()
