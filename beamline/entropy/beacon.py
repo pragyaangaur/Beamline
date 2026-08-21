@@ -37,6 +37,7 @@ model as the NIST Randomness Beacon, and it should be described to customers tha
 from __future__ import annotations
 
 import hashlib
+import os
 import threading
 import time
 from dataclasses import asdict, dataclass, field
@@ -264,6 +265,64 @@ def verify_pulse(pulse: dict, prev_output: str | None = None,
     return True, "ok"
 
 
+COMMITMENT_VERSION = "beamline/commitment/v1"
+COMMITMENT_BODY_FIELDS = ("version", "commit_id", "tag", "target_round",
+                          "created_at_ms", "created_after_round", "public_key")
+
+
+def commitment_body(receipt: dict) -> dict:
+    return {k: receipt.get(k) for k in COMMITMENT_BODY_FIELDS}
+
+
+def verify_commitment(receipt: dict, public_key_hex: str | None = None, *,
+                      trusted_keys=None, allow_unsigned: bool = False) -> tuple[bool, str]:
+    """Check a commitment receipt: signed by whom, and made before what.
+
+    The receipt is the operator attesting "at this moment, with the chain standing at
+    round N, somebody named this exact tag against round M". It is only worth anything
+    if M > N -- otherwise the pulse that decides the draw already existed when the draw
+    was named, and the runner could have chosen either.
+    """
+    anchor = _trust_anchor(public_key_hex, trusted_keys)
+    if anchor is None and not allow_unsigned:
+        return False, "no trust anchor: pass the signing key you expect"
+    if receipt.get("version") != COMMITMENT_VERSION:
+        return False, f"unexpected commitment version {receipt.get('version')!r}"
+    for name in ("target_round", "created_at_ms", "created_after_round"):
+        if not isinstance(receipt.get(name), int) or isinstance(receipt.get(name), bool):
+            return False, f"{name} must be an integer"
+    if not isinstance(receipt.get("tag"), str) or not receipt["tag"]:
+        return False, "tag must be a non-empty string"
+    if not isinstance(receipt.get("commit_id"), str) or not receipt["commit_id"]:
+        return False, "commit_id must be a non-empty string"
+    if receipt["target_round"] <= receipt["created_after_round"]:
+        return False, (f"commitment names round {receipt['target_round']} but the chain "
+                       f"had already reached round {receipt['created_after_round']}; "
+                       f"the deciding pulse existed before the draw was announced")
+
+    ok, why = is_canonical(commitment_body(receipt))
+    if not ok:
+        return False, f"commitment body is not canonically encodable: {why}"
+
+    sig, declared = receipt.get("signature"), receipt.get("public_key")
+    if not sig:
+        if anchor is not None:
+            return False, "commitment is unsigned; anyone could have written it afterwards"
+        return True, "well-formed but UNSIGNED: proves nothing about when it was made"
+    if not declared:
+        return False, "commitment is signed but declares no public key"
+    if anchor is not None and declared not in anchor:
+        return False, f"commitment signed by an untrusted key ({declared[:16]}...)"
+    if not HAVE_ED25519:
+        return False, "signature present but ed25519 support is not installed"
+    try:
+        Ed25519PublicKey.from_public_bytes(bytes.fromhex(declared)).verify(
+            bytes.fromhex(sig), encode(commitment_body(receipt)))
+    except Exception:
+        return False, "ed25519 signature verification failed"
+    return True, "ok"
+
+
 #: How far a pulse's timestamp may sit from its scheduled slot before a strict
 #: verifier calls the chain back-dated. Wide enough for clock skew and a slow emit.
 MAX_TIMESTAMP_SKEW_MS = 5 * 60 * 1000
@@ -394,6 +453,46 @@ class Beacon:
             record = p.to_dict()
             self._store.insert_pulse(record)
             return record
+
+    # --- commitments ------------------------------------------------------
+    def commit(self, tag: str, target_round: int | None = None, *,
+               rounds_ahead: int = 1, key_id: str = "") -> dict:
+        """Record a draw against a round that has not happened yet.
+
+        Refuses to commit to an already-emitted round. That refusal is the entire
+        mechanism: it is what makes a commitment evidence rather than a note, because
+        a receipt can only ever exist for a draw named before its deciding pulse.
+        """
+        with self._lock:
+            latest = self._store.latest_pulse()
+            current = latest["round"] if latest else 0
+            if target_round is None:
+                target_round = current + max(1, rounds_ahead)
+            if target_round <= current:
+                raise ValueError(
+                    f"round {target_round} has already been emitted (the chain is at "
+                    f"{current}). A draw can only be committed to a future pulse -- "
+                    f"that is what proves nobody chose the outcome."
+                )
+            receipt = {
+                "version": COMMITMENT_VERSION,
+                "commit_id": hashlib.sha256(
+                    b"beamline/commit/v1" + os.urandom(32) + tag.encode()
+                ).hexdigest()[:32],
+                "tag": tag,
+                "target_round": target_round,
+                "created_at_ms": int(time.time() * 1000),
+                "created_after_round": current,
+                "public_key": self.public_key_hex,
+            }
+            if self._signer is not None:
+                receipt["signature"] = self._signer.sign(
+                    encode(commitment_body(receipt))).hex()
+            self._store.insert_commitment(receipt, key_id)
+            return receipt
+
+    def commitment(self, commit_id: str) -> dict | None:
+        return self._store.get_commitment(commit_id)
 
     def derive(self, round_no: int, tag: str, n: int) -> bytes:
         """Deterministically derive `n` bytes from a published pulse and a caller tag.
