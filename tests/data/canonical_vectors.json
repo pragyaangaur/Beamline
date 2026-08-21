@@ -1,0 +1,149 @@
+[
+ {
+  "value": {},
+  "encoded": "{}"
+ },
+ {
+  "value": {
+   "a": 1,
+   "b": 2,
+   "C": 3
+  },
+  "encoded": "{\"C\":3,\"a\":1,\"b\":2}"
+ },
+ {
+  "value": {
+   "b": 1,
+   "a": 2
+  },
+  "encoded": "{\"a\":2,\"b\":1}"
+ },
+ {
+  "value": {
+   "nested": {
+    "z": [
+     1,
+     2,
+     {
+      "y": null
+     }
+    ],
+    "a": true
+   }
+  },
+  "encoded": "{\"nested\":{\"a\":true,\"z\":[1,2,{\"y\":null}]}}"
+ },
+ {
+  "value": {
+   "empty_list": [],
+   "empty_obj": {},
+   "false": false
+  },
+  "encoded": "{\"empty_list\":[],\"empty_obj\":{},\"false\":false}"
+ },
+ {
+  "value": {
+   "neg": -1,
+   "zero": 0,
+   "big": 9007199254740991,
+   "negbig": -9007199254740991
+  },
+  "encoded": "{\"big\":9007199254740991,\"neg\":-1,\"negbig\":-9007199254740991,\"zero\":0}"
+ },
+ {
+  "value": {
+   "quote": "he said \"hi\"",
+   "backslash": "a\\b",
+   "slash": "a/b"
+  },
+  "encoded": "{\"backslash\":\"a\\\\b\",\"quote\":\"he said \\\"hi\\\"\",\"slash\":\"a/b\"}"
+ },
+ {
+  "value": {
+   "control": "\n\r\t\b\f",
+   "nul": "\u0000",
+   "unit_sep": "\u001f"
+  },
+  "encoded": "{\"control\":\"\\n\\r\\t\\b\\f\",\"nul\":\"\\u0000\",\"unit_sep\":\"\\u001f\"}"
+ },
+ {
+  "value": {
+   "latin1": "Ny-\u00c5lesund",
+   "greek": "\u03bb",
+   "cjk": "\u6771\u4eac"
+  },
+  "encoded": "{\"cjk\":\"\\u6771\\u4eac\",\"greek\":\"\\u03bb\",\"latin1\":\"Ny-\\u00c5lesund\"}"
+ },
+ {
+  "value": {
+   "astral": "\ud83d\udef0",
+   "mixed": "sat \ud83d\udef0 elite"
+  },
+  "encoded": "{\"astral\":\"\\ud83d\\udef0\",\"mixed\":\"sat \\ud83d\\udef0 elite\"}"
+ },
+ {
+  "value": {
+   "del": "\u007f",
+   "high_ascii_edge": "~"
+  },
+  "encoded": "{\"del\":\"\\u007f\",\"high_ascii_edge\":\"~\"}"
+ },
+ {
+  "value": {
+   "version": "beamline/pulse/v3",
+   "round": 10,
+   "timestamp_ms": 1787300655457,
+   "period_seconds": 60,
+   "prev_output": "abababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababab",
+   "local_value": "cdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd",
+   "public_key": null,
+   "provenance": {
+    "local_os": {
+     "at_ms": 1787300654442,
+     "bytes": 64,
+     "provider": "kernel getrandom(2)"
+    },
+    "astro": {
+     "at_ms": 1787300621847,
+     "feeds": {
+      "goes_xray": {
+       "rows": 6
+      }
+     },
+     "advanced": true
+    }
+   }
+  },
+  "encoded": "{\"local_value\":\"cdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd\",\"period_seconds\":60,\"prev_output\":\"abababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababab\",\"provenance\":{\"astro\":{\"advanced\":true,\"at_ms\":1787300621847,\"feeds\":{\"goes_xray\":{\"rows\":6}}},\"local_os\":{\"at_ms\":1787300654442,\"bytes\":64,\"provider\":\"kernel getrandom(2)\"}},\"public_key\":null,\"round\":10,\"timestamp_ms\":1787300655457,\"version\":\"beamline/pulse/v3\"}"
+ },
+ {
+  "value": "bare string",
+  "encoded": "\"bare string\""
+ },
+ {
+  "value": [
+   "a",
+   1,
+   null,
+   true,
+   false
+  ],
+  "encoded": "[\"a\",1,null,true,false]"
+ },
+ {
+  "value": 0,
+  "encoded": "0"
+ },
+ {
+  "value": 0,
+  "encoded": "0"
+ },
+ {
+  "value": null,
+  "encoded": "null"
+ },
+ {
+  "value": true,
+  "encoded": "true"
+ }
+]
