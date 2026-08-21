@@ -142,13 +142,24 @@ async def commitments_for_round(round_no: int):
 class DeriveRequest(BaseModel):
     """A reproducible draw pinned to a published pulse.
 
-    `tag` is the caller's commitment string -- a draw id, an order number, anything
-    that names *this specific* draw. Publish the tag before the pulse round happens
-    and the result becomes something you can prove you did not choose.
+    `tag` names *this specific* draw -- a draw id, an order number, an entry-list
+    hash. Deriving from an already-published pulse is reproducible by anyone, but
+    reproducible is not the same as fair: a runner free to pick the tag after seeing
+    the pulse, or to pick which pulse to call the draw, controls the outcome while
+    every byte of cryptography stays honest.
+
+    Pass `commit_id` to close that gap. Without one the result is still correct and
+    still reproducible; it simply is not evidence of anything about timing, and the
+    response says so rather than leaving the reader to assume otherwise.
     """
 
     round: int = Field(..., ge=1)
     tag: str = Field(..., min_length=1, max_length=256)
+    commit_id: str | None = Field(
+        None, max_length=64,
+        description="The receipt from /v1/beacon/commit. Supply it and the response "
+                    "carries proof the draw was named before this round existed; "
+                    "omit it and the response says plainly that it does not.")
     kind: str = Field("integers", pattern="^(bytes|integers|shuffle|sample)$")
     count: int = Field(1, ge=1, le=gen.MAX_COUNT)
     min: int = 0
@@ -164,6 +175,28 @@ async def derive(req: DeriveRequest, p: Principal = Depends(require_key)):
             404, f"pulse {req.round} does not exist yet. Derivation only works against "
                  "already-published pulses -- that is what makes the result verifiable."
         )
+
+    commitment_rec = None
+    if req.commit_id:
+        commitment_rec = SERVICE.beacon.commitment(req.commit_id)
+        if commitment_rec is None:
+            raise HTTPException(404, f"no commitment {req.commit_id!r}")
+        # The tag and round are inside the signed receipt, so mismatches here are the
+        # server catching a runner trying to reuse one announcement for a different
+        # draw. A verifier would catch it too; failing early is friendlier.
+        if commitment_rec["tag"] != req.tag:
+            raise HTTPException(
+                409, f"commitment {req.commit_id} names tag {commitment_rec['tag']!r}, "
+                     f"not {req.tag!r}")
+        if commitment_rec["target_round"] != req.round:
+            raise HTTPException(
+                409, f"commitment {req.commit_id} names round "
+                     f"{commitment_rec['target_round']}, not {req.round}")
+        ok, why = verify_commitment(
+            commitment_rec, SERVICE.beacon.public_key_hex,
+            allow_unsigned=not SERVICE.beacon.public_key_hex)
+        if not ok:
+            raise HTTPException(409, f"commitment {req.commit_id} does not verify: {why}")
 
     # A deterministic byte stream from the pulse, so the client can recompute this
     # offline from the published pulse alone. Buffered because `bounded_int` pulls
@@ -204,6 +237,20 @@ async def derive(req: DeriveRequest, p: Principal = Depends(require_key)):
         "tag": req.tag,
         "pulse_output": pulse_rec["output"],
         "reproducible": True,
+        "committed": commitment_rec is not None,
+        "commitment": commitment_rec,
+        "provenance_note": (
+            f"Announced at round {commitment_rec['created_after_round']}, decided by "
+            f"round {req.round}. The deciding pulse did not exist when the draw was "
+            f"named, and the tag is inside the signed receipt, so neither could be "
+            f"chosen after the fact."
+            if commitment_rec else
+            "NOT COMMITTED. This result is reproducible by anyone, but nothing here "
+            "shows the draw was named before round "
+            f"{req.round} was published -- the tag and the round were both chosen "
+            "with the pulse already in hand. Use /v1/beacon/commit first if the "
+            "result needs to convince someone who assumes you cheated."
+        ),
         "how_to_verify": (
             "stream = concat over i>=1 of SHA512('beamline/derive/v1' | pulse_output_bytes "
             "| f'{tag}#{i}' | uint32be(j)) for j=0..63; then apply the same generator "
