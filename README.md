@@ -286,13 +286,47 @@ implementations together on every test run.
 ```
 receipt = Ed25519_sign(canonical_bytes(
               version, commit_id, tag, target_round,
-              created_at_ms, created_after_round, public_key))
+              created_at_ms, created_after_round,
+              committer, sequence, draw, public_key))
+
+draw = {kind, count, min, max, items_digest}
 ```
 
-`created_after_round` is the round the chain had reached when the receipt was issued, and
-the server refuses to issue one for a round already emitted. A verifier rejects any receipt
+Three fields carry the weight, and each closes a grinding route that the others do not.
+
+**`created_after_round`** is where the chain stood when the receipt was issued, and the
+server refuses to issue one for a round already emitted. A verifier rejects any receipt
 whose `target_round` is not strictly above it — before checking the signature, because a
 perfectly signed receipt written after the deciding pulse proves nothing.
+
+**`draw`** fixes the shape. A tag does not name a winner: the same committed tag against
+the same pulse picks a different person at `max=100` than at `max=5000`, and a different
+set again at `count=3`. `items_digest` pins the population, so adding an entrant after
+naming the draw invalidates the receipt instead of quietly changing who can win.
+
+**`sequence`** is the committer's running count of draws registered against that round.
+Twenty receipts made honestly in advance are twenty valid receipts, and publishing only
+the one that wins is grinding by a route no single-receipt check can see. The
+authoritative answer is the public list at `/v1/beacon/commitments/{round}`; the sequence
+number is the offline fallback, and it is weaker — a grinder whose *first* plan happens to
+win holds a receipt reading `sequence: 1`. `check_draw` says which of the two it relied on.
+
+### Key rotation
+
+```
+rotation = {version, from_public_key, to_public_key, effective_round, created_at_ms}
+           signed by BOTH keys
+```
+
+A change of signing key is only meaningful if the key being retired endorses it. Naming
+two keys as trusted says you would accept either; it does not show the first ever handed
+over, so an attacker who talks a verifier into trusting their key gets a substituted
+archive accepted with nothing in the chain contradicting it. `check_chain` requires a
+matching endorsement, served from `/v1/beacon/rotations`.
+
+The second signature is proof of possession. Without it, authority could be rotated
+towards a public key nobody holds — stranding the chain on a key that can never sign
+again.
 
 ### The harvester
 
@@ -466,6 +500,10 @@ What an attacker can try, and what stops it. Each row has a test in
 | Make two verifiers disagree about one pulse | The canonical encoding is a specified subset that refuses anything it cannot spell one way, pinned across languages by shared test vectors. |
 | Rig the draw by grinding the tag or the round | The signed commitment: it names the exact tag and round, and records where the chain stood when it was issued. |
 | Announce a draw after seeing its pulse | The server refuses to commit to an emitted round; the verifier refuses a receipt whose `target_round` is not above its `created_after_round`. |
+| Commit the name honestly, then pick the size of the draw | The receipt fixes kind, count, bounds and a digest of the entry list. One tag covered `max=100` and `max=5000`, which name different people. |
+| Register twenty draws in advance, publish the one that wins | Every receipt is genuine, so no single-receipt check can see it. The public commitment list for the round is authoritative; the receipt's `sequence` is the offline fallback. |
+| Switch signing keys and call it a rotation | The retiring key must sign an endorsement, and the incoming key must sign to prove it exists. |
+| Reproduce a draw with the wrong sampling branch | Both SDKs reimplement the server's threshold and are checked against it at the boundary; a verifier on the wrong branch silently produces different winners. |
 
 **Not defended: the operator withholding a pulse and re-rolling.** Beamline could emit a
 pulse, dislike it, and publish the next one instead. The provenance gives a lower bound on
