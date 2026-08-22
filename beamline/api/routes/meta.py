@@ -65,6 +65,16 @@ async def about():
             "which pulse to call the draw; both produce results that reproduce exactly "
             "and carry a valid signature. Only a commitment made before the deciding "
             "round rules that out -- see /v1/beacon/commit.",
+            "We do not claim a commitment to a draw's NAME is sufficient. The same tag "
+            "against the same pulse names a different winner at max=100 than at "
+            "max=5000, so the receipt fixes kind, count, bounds and a digest of the "
+            "entry list as well.",
+            "We do not claim a single valid receipt proves a draw was not ground out. "
+            "Twenty draws registered honestly in advance produce twenty valid receipts, "
+            "and publishing only the winning one is grinding no single-receipt check "
+            "can see. The public list at /v1/beacon/commitments/{round} is the "
+            "authoritative answer; the sequence number inside each receipt is a weaker "
+            "offline fallback that misses a grinder whose first attempt happened to win.",
         ],
         "best_uses": [
             "Provably-fair draws, raffles, lotteries, and giveaways "
@@ -82,6 +92,13 @@ async def about():
             "and it is the same residual trust the NIST Randomness Beacon carries. "
             "Anchoring pulses into an external append-only log would close it and is "
             "not built."
+        ),
+        "key_rotation": (
+            "A change of signing key must be endorsed by the key being retired, and the "
+            "records are public at /v1/beacon/rotations. Trusting two keys says only "
+            "that you would accept either; it does not show the first handed over. "
+            "Verifiers that skip this accept a substituted archive from anyone who also "
+            "persuaded them to trust a second key."
         ),
         "verification_requires_a_trust_anchor": (
             "Verify against a signing key recorded out of band. A verifier that fetches "

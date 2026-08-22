@@ -306,7 +306,8 @@ class TestCommitmentEndpoints:
     def test_derive_with_a_commitment_reports_it(self, signed_client, key):
         headers = {"Authorization": f"Bearer {key}"}
         commit = signed_client.post("/v1/beacon/commit", headers=headers,
-                                    json={"tag": "bound-draw"}).json()
+                                    json={"tag": "bound-draw", "count": 1,
+                                          "min": 1, "max": 100}).json()
         SERVICE.beacon.emit()
         r = signed_client.post("/v1/beacon/derive", headers=headers, json={
             "round": commit["target_round"], "tag": "bound-draw",
@@ -319,12 +320,42 @@ class TestCommitmentEndpoints:
         """Grinding, at the API boundary: the tag is inside the signed receipt."""
         headers = {"Authorization": f"Bearer {key}"}
         commit = signed_client.post("/v1/beacon/commit", headers=headers,
-                                    json={"tag": "giveaway-7"}).json()
+                                    json={"tag": "giveaway-7", "count": 1,
+                                          "min": 1, "max": 100}).json()
         SERVICE.beacon.emit()
         r = signed_client.post("/v1/beacon/derive", headers=headers, json={
             "round": commit["target_round"], "tag": "giveaway-7 (attempt 138)",
             "commit_id": commit["commit_id"], "count": 1, "min": 1, "max": 100})
         assert r.status_code == 409 and "not" in r.json()["detail"]
+
+    def test_derive_refuses_a_draw_of_a_different_shape(self, signed_client, key):
+        """The tag was committed and so was the size. Both pick the winner."""
+        headers = {"Authorization": f"Bearer {key}"}
+        commit = signed_client.post("/v1/beacon/commit", headers=headers,
+                                    json={"tag": "giveaway-9", "count": 1,
+                                          "min": 1, "max": 100}).json()
+        SERVICE.beacon.emit()
+        r = signed_client.post("/v1/beacon/derive", headers=headers, json={
+            "round": commit["target_round"], "tag": "giveaway-9",
+            "commit_id": commit["commit_id"], "count": 1, "min": 1, "max": 5000})
+        assert r.status_code == 409
+        assert "max: committed 100, requested 5000" in r.json()["detail"]
+
+    def test_commit_reports_how_many_draws_you_have_registered(self, signed_client, key):
+        """Registering several against one round is allowed, and never quiet."""
+        headers = {"Authorization": f"Bearer {key}"}
+        target = signed_client.get("/v1/beacon/latest").json()["round"] + 1
+        first = signed_client.post("/v1/beacon/commit", headers=headers,
+                                   json={"tag": "plan-a", "target_round": target}).json()
+        assert first["sequence"] == 1
+        assert "only draw" in first["exclusivity_note"]
+
+        third = None
+        for tag in ("plan-b", "plan-c"):
+            third = signed_client.post("/v1/beacon/commit", headers=headers,
+                                       json={"tag": tag, "target_round": target}).json()
+        assert third["sequence"] == 3
+        assert "3 draws registered" in third["exclusivity_note"]
 
     def test_derive_refuses_a_commitment_for_another_round(self, signed_client, key):
         headers = {"Authorization": f"Bearer {key}"}

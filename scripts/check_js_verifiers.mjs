@@ -157,16 +157,24 @@ console.log("\nthe page still asks every question it has a verifier for");
 console.log("\nthe commitment check refuses everything except the announced draw");
 {
   const c = BUNDLE.commitment;
-  check("genuine draw accepted", (await V.commitmentState(c.tag, c.target_round)) === "ok");
+  const N = c.draw.count, POP = c.draw.max;
+  check("genuine draw accepted",
+        (await V.commitmentState(c.tag, c.target_round, N, POP)) === "ok");
   check("a different name is not covered",
-        (await V.commitmentState(c.tag + " (attempt 138)", c.target_round)) === "mismatch");
+        (await V.commitmentState(c.tag + " (attempt 138)", c.target_round, N, POP)) === "mismatch");
   check("a different round is not covered",
-        (await V.commitmentState(c.tag, c.target_round - 1)) === "mismatch");
+        (await V.commitmentState(c.tag, c.target_round - 1, N, POP)) === "mismatch");
+  /* The name was committed and so was the size. One extra entrant is a different
+     draw naming different people, under a receipt that would otherwise cover it. */
+  check("one extra entrant is not covered",
+        (await V.commitmentState(c.tag, c.target_round, N, POP + 1)) === "shape");
+  check("a different number of winners is not covered",
+        (await V.commitmentState(c.tag, c.target_round, N + 1, POP)) === "shape");
   /* Grinding, concretely: with the pulse in hand, try names until one wins. Every
      result reproduces; none of them is announced. */
   let covered = 0;
   for (let i = 0; i < 200; i++) {
-    if ((await V.commitmentState(`${c.tag} #${i}`, c.target_round)) !== "mismatch") covered++;
+    if ((await V.commitmentState(`${c.tag} #${i}`, c.target_round, N, POP)) !== "mismatch") covered++;
   }
   check("200 ground-out name variants all uncovered", covered === 0, `${covered} slipped through`);
 }
@@ -237,15 +245,49 @@ console.log("\nthe JavaScript SDK refuses what the Python one refuses");
 
   const c = BUNDLE.commitment;
   const pulse = real.find((p) => p.round === c.target_round);
-  const drawn = await SDK.reproduceIntegers(pulse.output, c.tag, 1, 1, 5000);
+  const spec = { kind: c.draw.kind, count: c.draw.count, min: c.draw.min, max: c.draw.max };
+  const drawn = await SDK.reproduceUniqueIntegers(pulse.output, c.tag, spec.count, spec.min, spec.max);
   check("committed draw verifies",
-        (await SDK.checkDraw(pulse, c, drawn, BUNDLE.public_key, { count: 1, min: 1, max: 5000 }))[0]);
+        (await SDK.checkDraw(pulse, c, drawn, BUNDLE.public_key, spec))[0]);
   check("a ground-out tag does not",
-        !(await SDK.checkDraw(pulse, { ...c, tag: c.tag + "-v138" }, drawn, BUNDLE.public_key,
-                              { count: 1, min: 1, max: 5000 }))[0]);
+        !(await SDK.checkDraw(pulse, { ...c, tag: c.tag + "-v138" }, drawn, BUNDLE.public_key, spec))[0]);
   check("a back-dated receipt does not",
         !(await SDK.checkCommitment({ ...c, created_after_round: c.target_round },
                                     BUNDLE.public_key))[0]);
+
+  /* The shape is committed too, so the same receipt cannot cover a different draw. */
+  const reshaped = await SDK.reproduceUniqueIntegers(pulse.output, c.tag, spec.count, spec.min, spec.max + 1);
+  check("a ground-out population does not",
+        !(await SDK.checkDraw(pulse, c, reshaped, BUNDLE.public_key,
+                              { ...spec, max: spec.max + 1 }))[0]);
+
+  /* The sequence number is inside the signed body, so editing it after the fact
+     breaks the signature rather than reaching the exclusivity check. A genuine
+     multi-commitment grinder is exercised in tests/test_attacks.py, where a real
+     sequence-2 receipt can be issued. */
+  check("editing the sequence number breaks the signature",
+        !(await SDK.checkDraw(pulse, { ...c, sequence: 12 }, drawn, BUNDLE.public_key, spec))[0]);
+  check("...and says so rather than blaming the count",
+        (await SDK.checkDraw(pulse, { ...c, sequence: 12 }, drawn, BUNDLE.public_key, spec))[1]
+          .includes("signature"));
+
+  /* Both SDKs must draw the same winners. Checked against a committed fixture
+     rather than by shelling out to Python: this job has Node and nothing else, and a
+     harness that reaches for another runtime fails on the runtime rather than on the
+     thing it is testing. The Python suite checks itself against the same file, so
+     drift on either side is caught. */
+  const DRAWS = JSON.parse(readFileSync(join(ROOT, "tests", "data", "draw_vectors.json"), "utf8"));
+  for (const d of DRAWS.draws) {
+    let got;
+    if (d.kind === "integers") got = await SDK.reproduceIntegers(DRAWS.pulse_output, d.tag, d.count, d.min, d.max);
+    else if (d.kind === "sample") got = await SDK.reproduceUniqueIntegers(DRAWS.pulse_output, d.tag, d.count, d.min, d.max);
+    else if (d.kind === "shuffle") got = await SDK.reproduceShuffle(DRAWS.pulse_output, d.tag, d.items);
+    else if (d.kind === "bytes") got = await SDK.reproduceBytes(DRAWS.pulse_output, d.tag, d.count);
+    else { check(`unknown draw kind ${d.kind}`, false); continue; }
+    check(`reproduces ${d.kind} "${d.tag}" exactly`,
+          JSON.stringify(got) === JSON.stringify(d.expected),
+          `expected ${JSON.stringify(d.expected).slice(0, 60)}, got ${JSON.stringify(got).slice(0, 60)}`);
+  }
 
   /* The two SDKs and the two pages must agree byte for byte, or an honest pulse
      verifies in one place and fails in another. */
