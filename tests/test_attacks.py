@@ -140,18 +140,65 @@ class TestKeySubstitution:
         assert not ok, "a spliced chain was accepted"
         assert "round 5" in reason and "untrusted key" in reason
 
-    def test_a_named_rotation_still_works(self, operator, tmp_path):
-        """The legitimate case the old behaviour was trying to serve."""
+    def test_an_endorsed_rotation_works(self, operator, tmp_path):
+        """The legitimate case, which now needs the old key's signature to say so."""
         first = [operator.emit(), operator.emit()]
         sk2 = Ed25519PrivateKey.generate()
+        endorsement = operator.endorse_rotation(sk2.private_bytes_raw().hex(),
+                                                effective_round=3)
         second = Beacon(operator._store, operator._pool, 60, sk2.private_bytes_raw().hex())
         rotated = first + [second.emit()]
+        both = [operator.public_key_hex, second.public_key_hex]
 
         assert not V.check_chain(rotated, operator.public_key_hex)[0]
-        ok, msg = V.check_chain(
-            rotated, trusted_keys=[operator.public_key_hex, second.public_key_hex])
+        ok, msg = V.check_chain(rotated, trusted_keys=both, rotations=[endorsement])
         assert ok, msg
-        assert "signing key changed" in msg
+        assert "endorsed by the key it retired" in msg
+
+    def test_trusting_both_keys_is_not_an_endorsement(self, operator):
+        """The hole: naming two keys says you would accept either, nothing more.
+
+        An attacker who talks a verifier into trusting their key -- a doctored docs
+        page, a support reply, a mirror of the repository -- gets a substituted
+        archive accepted, with nothing in the chain contradicting it.
+        """
+        first = [operator.emit(), operator.emit()]
+        attacker = Ed25519PrivateKey.generate()
+        theirs = Beacon(operator._store, operator._pool, 60,
+                        attacker.private_bytes_raw().hex())
+        spliced = first + [theirs.emit()]
+
+        ok, why = V.check_chain(
+            spliced, trusted_keys=[operator.public_key_hex, theirs.public_key_hex])
+        assert not ok, "an unendorsed key change was accepted"
+        assert "ever handed over to" in why
+
+    def test_a_rotation_cannot_be_forged_by_the_incoming_key(self, operator):
+        """Whoever wants the chain must get the outgoing key to sign for them."""
+        operator.emit()
+        sk2 = Ed25519PrivateKey.generate()
+        endorsement = operator.endorse_rotation(sk2.private_bytes_raw().hex(),
+                                                effective_round=2)
+
+        attacker = Ed25519PrivateKey.generate()
+        forged = dict(endorsement)
+        forged["to_public_key"] = attacker.public_key().public_bytes_raw().hex()
+        forged["signature_to"] = attacker.sign(
+            V.canonical_rotation_body(forged)).hex()
+
+        ok, why = V.check_rotation(forged)
+        assert not ok and "signature_from" in why
+
+    def test_a_rotation_must_prove_the_new_key_exists(self, operator):
+        """Proof of possession: authority cannot be handed to a key nobody holds."""
+        operator.emit()
+        sk2 = Ed25519PrivateKey.generate()
+        endorsement = operator.endorse_rotation(sk2.private_bytes_raw().hex(),
+                                                effective_round=2)
+        stranded = dict(endorsement)
+        del stranded["signature_to"]
+        ok, why = V.check_rotation(stranded)
+        assert not ok and "signature_to" in why
 
 
 class TestBrowserVerifier:
@@ -202,7 +249,7 @@ class TestGrinding:
 
     def test_a_commitment_refuses_the_ground_tag(self, operator):
         """The fix: the announced tag is inside a signed receipt."""
-        receipt = operator.commit("Giveaway 7")
+        receipt = operator.commit("Giveaway 7", minimum=0, maximum=99)
         pulse = operator.emit()
         assert pulse["round"] == receipt["target_round"]
 
@@ -215,7 +262,7 @@ class TestGrinding:
 
     def test_round_grinding_is_refused(self, operator):
         """The other half: keep the tag, choose the pulse."""
-        receipt = operator.commit("Giveaway 7")
+        receipt = operator.commit("Giveaway 7", minimum=0, maximum=99)
         committed = operator.emit()
         later = [operator.emit() for _ in range(5)]
 
@@ -241,9 +288,12 @@ class TestGrinding:
         operator.emit()
         pulse = operator.emit()
         forged_receipt = {
-            "version": "beamline/commitment/v1", "commit_id": "0" * 32,
+            "version": V.COMMITMENT_VERSION, "commit_id": "0" * 32,
             "tag": "after the fact", "target_round": 2,
             "created_at_ms": 1787300000000, "created_after_round": 2,
+            "committer": "someone", "sequence": 1,
+            "draw": {"kind": "integers", "count": 1, "min": 0, "max": 100,
+                     "items_digest": None},
             "public_key": operator.public_key_hex,
         }
         forged_receipt["signature"] = operator._signer.sign(
@@ -252,6 +302,152 @@ class TestGrinding:
         ok, reason = V.check_commitment(forged_receipt, operator.public_key_hex)
         assert not ok, "a receipt naming an already-emitted round was accepted"
         assert "already reached round" in reason
+
+
+class TestShapeGrinding:
+    """Attack 6: commit the name honestly, then choose the size of the draw.
+
+    The first version of the commitment fixed the tag and nothing else. A tag does
+    not name a winner -- the same committed tag against the same pulse picks a
+    different person at max=100 than at max=5000 -- so the runner still had a free
+    choice after the pulse appeared, and every result verified.
+    """
+
+    def test_the_parameters_really_do_change_the_winner(self, operator):
+        """Establishing the attack is real before asserting it is closed."""
+        operator.commit("giveaway-7")
+        pulse = operator.emit()
+        winners = {
+            (c, lo, hi): tuple(V.reproduce_integers(pulse["output"], "giveaway-7", c, lo, hi))
+            for c, lo, hi in [(1, 1, 100), (1, 1, 5000), (1, 0, 99), (1, 1, 50)]
+        }
+        assert len(set(winners.values())) > 1, (
+            "if the parameters did not change the outcome there would be nothing to fix")
+
+    def test_a_different_range_is_refused(self, operator):
+        receipt = operator.commit("giveaway-7", count=1, minimum=1, maximum=100)
+        pulse = operator.emit()
+        ground = V.reproduce_integers(pulse["output"], "giveaway-7", 1, 1, 5000)
+        ok, why = V.check_draw(pulse, receipt, ground, operator.public_key_hex,
+                               count=1, minimum=1, maximum=5000)
+        assert not ok, "a draw over a different range passed under the same receipt"
+        assert "max=100 was committed, 5000 was used" in why
+
+    def test_a_different_number_of_winners_is_refused(self, operator):
+        receipt = operator.commit("giveaway-7", count=1, minimum=1, maximum=100)
+        pulse = operator.emit()
+        ground = V.reproduce_integers(pulse["output"], "giveaway-7", 3, 1, 100)
+        ok, why = V.check_draw(pulse, receipt, ground, operator.public_key_hex,
+                               count=3, minimum=1, maximum=100)
+        assert not ok and "count=1 was committed, 3 was used" in why
+
+    def test_the_entry_list_is_pinned(self, operator):
+        """Adding an entrant after naming the draw changes who can win."""
+        entrants = [f"entrant_{i}" for i in range(50)]
+        receipt = operator.commit("raffle", kind="shuffle", count=1, items=entrants)
+        pulse = operator.emit()
+
+        padded = entrants + ["the-organiser's-cousin"]
+        ok, why = V.check_draw(pulse, receipt, V.reproduce_shuffle(pulse["output"], "raffle", padded),
+                               operator.public_key_hex, kind="shuffle", items=padded, count=1)
+        assert not ok, "the population was swapped under a valid receipt"
+        assert "items_digest" in why
+
+        honest = V.reproduce_shuffle(pulse["output"], "raffle", entrants)
+        assert V.check_draw(pulse, receipt, honest, operator.public_key_hex,
+                            kind="shuffle", items=entrants, count=1)[0]
+
+    def test_the_shape_cannot_be_edited_after_signing(self, operator):
+        receipt = operator.commit("giveaway-7", count=1, minimum=1, maximum=100)
+        tampered = {**receipt, "draw": {**receipt["draw"], "max": 5000}}
+        ok, why = V.check_commitment(tampered, operator.public_key_hex)
+        assert not ok and "signature" in why
+
+
+class TestMultiCommitmentGrinding:
+    """Attack 7: register twenty draws in advance, publish the one that wins.
+
+    Every receipt is honest. Each was signed before the deciding pulse existed, each
+    names a real draw, each verifies on its own. The grinding happens in the choice of
+    which one to show, and no amount of checking a single receipt can see it.
+    """
+
+    def _twenty(self, operator, committer="grinder"):
+        receipts = [operator.commit(f"giveaway-8-plan-{i}", key_id=committer,
+                                    count=1, minimum=1, maximum=100)
+                    for i in range(20)]
+        pulse = operator.emit()
+        scored = sorted(
+            ((V.reproduce_integers(pulse["output"], r["tag"], 1, 1, 100)[0], r)
+             for r in receipts), key=lambda kv: kv[0])
+        return pulse, receipts, scored[0]
+
+    def test_every_individual_receipt_is_genuine(self, operator):
+        """The premise. These are not forgeries and cannot be made to look like any."""
+        _, receipts, _ = self._twenty(operator)
+        for r in receipts:
+            assert V.check_commitment(r, operator.public_key_hex)[0]
+            assert r["created_after_round"] < r["target_round"]
+
+    def test_the_published_list_catches_it(self, operator):
+        """The authoritative answer: the operator's record of the whole round."""
+        pulse, _, (winner_value, receipt) = self._twenty(operator)
+        siblings = operator._store.commitments_for_round(pulse["round"])
+        ok, why = V.check_draw(pulse, receipt, [winner_value], operator.public_key_hex,
+                               count=1, minimum=1, maximum=100, siblings=siblings)
+        assert not ok, "a ground-out draw passed with the sibling list in hand"
+        assert "registered 20 draws" in why
+
+    def test_the_sequence_number_catches_it_without_the_list(self, operator):
+        """The offline fallback, and it is weaker on purpose."""
+        pulse, _, (winner_value, receipt) = self._twenty(operator)
+        if receipt["sequence"] == 1:
+            pytest.skip("the winning plan happened to be the first; see the test below")
+        ok, why = V.check_draw(pulse, receipt, [winner_value], operator.public_key_hex,
+                               count=1, minimum=1, maximum=100)
+        assert not ok and "draw number" in why
+
+    def test_the_sequence_fallback_misses_a_lucky_grinder(self, operator):
+        """Stated as a test so the limitation cannot be quietly forgotten.
+
+        A grinder whose *first* plan happens to win holds a receipt reading sequence 1,
+        which is indistinguishable from an honest single commitment. Only the
+        published list closes that, which is why check_draw says which of the two it
+        relied on.
+        """
+        receipts = [operator.commit(f"plan-{i}", key_id="lucky", count=1,
+                                    minimum=1, maximum=100) for i in range(5)]
+        pulse = operator.emit()
+        first = receipts[0]
+        value = V.reproduce_integers(pulse["output"], first["tag"], 1, 1, 100)[0]
+
+        ok, why = V.check_draw(pulse, first, [value], operator.public_key_hex,
+                               count=1, minimum=1, maximum=100)
+        assert ok, "the fallback cannot see this, and the reason must admit it"
+        assert "the receipt's own word" in why
+
+        siblings = operator._store.commitments_for_round(pulse["round"])
+        ok, why = V.check_draw(pulse, first, [value], operator.public_key_hex,
+                               count=1, minimum=1, maximum=100, siblings=siblings)
+        assert not ok and "registered 5 draws" in why
+
+    def test_an_honest_single_commitment_still_passes(self, operator):
+        receipt = operator.commit("just-the-one", key_id="honest",
+                                 count=1, minimum=1, maximum=100)
+        pulse = operator.emit()
+        value = V.reproduce_integers(pulse["output"], "just-the-one", 1, 1, 100)[0]
+        siblings = operator._store.commitments_for_round(pulse["round"])
+        ok, why = V.check_draw(pulse, receipt, [value], operator.public_key_hex,
+                               count=1, minimum=1, maximum=100, siblings=siblings)
+        assert ok, why
+        assert "only draw against that round" in why
+
+    def test_a_truncated_sibling_list_is_refused(self, operator):
+        """A runner cannot publish a list that omits their own receipt."""
+        pulse, _, (value, receipt) = self._twenty(operator)
+        ok, why = V.check_draw(pulse, receipt, [value], operator.public_key_hex,
+                               count=1, minimum=1, maximum=100, siblings=[])
+        assert not ok and "missing from the published list" in why
 
 
 class TestCanonicalDivergence:
