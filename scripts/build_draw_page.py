@@ -51,22 +51,24 @@ async def build() -> dict:
         for _ in range(7):
             svc.beacon.emit()
         # Announced while the chain stands at 7, decided by round 8.
-        commitment = svc.beacon.commit(TAG)
+        commitment = svc.beacon.commit(TAG, key_id="demo", kind="sample",
+                                       count=WINNERS, minimum=1, maximum=ENTRANTS)
         pulse = svc.beacon.emit()
 
         sys.path.insert(0, str(ROOT / "sdk" / "python"))
         from beamline_client import verify as v
 
-        winners = v.reproduce_integers(pulse["output"], TAG, WINNERS, 1, ENTRANTS)
+        winners = v.reproduce_unique_integers(pulse["output"], TAG, WINNERS, 1, ENTRANTS)
         ok, reason = v.check_draw(pulse, commitment, winners, svc.beacon.public_key_hex,
-                                  count=WINNERS, minimum=1, maximum=ENTRANTS)
+                                  kind="sample", count=WINNERS, minimum=1,
+                                  maximum=ENTRANTS)
         if not ok:
             raise SystemExit(f"refusing to publish a record that does not verify: {reason}")
     finally:
         await svc.stop()
 
     return {
-        "tag": TAG, "winners": winners, "entrants": ENTRANTS,
+        "tag": TAG, "winners": winners, "entrants": ENTRANTS, "kind": "sample",
         "pulse": pulse, "commitment": commitment,
         "publicKey": svc.beacon.public_key_hex,
         "min": 1, "max": ENTRANTS, "count": WINNERS,
