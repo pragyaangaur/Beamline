@@ -177,10 +177,13 @@ def main() -> int:
     say(f"-> recomputed independently: \033[1m{local}\033[0m")
     say(f"-> matches the announced winners: \033[1m{local == draw.data}\033[0m")
     say()
+    siblings = httpx.get(
+        f"{BASE}/v1/beacon/commitments/{draw.round}", timeout=10).json()["commitments"]
     ok_d, why_d = verify.check_draw(public_pulse, public_commit, draw.data, pk,
-                                    count=3, minimum=1, maximum=5000)
-    say(f"All four questions at once -- authentic pulse, authentic receipt, receipt")
-    say(f"names this draw, numbers reproduce:")
+                                    count=3, minimum=1, maximum=5000, siblings=siblings)
+    say(f"All five questions at once -- authentic pulse, authentic receipt, receipt names")
+    say(f"this draw and its shape, it was the only draw registered for this round, and")
+    say(f"the numbers reproduce:")
     say(f"-> \033[1m{ok_d}\033[0m ({why_d})")
     say()
     chain = httpx.get(f"{BASE}/v1/beacon/chain?start=1&count=200", timeout=15).json()["pulses"]
@@ -228,6 +231,22 @@ def main() -> int:
     say("   This is the attack the commitment exists for, and the only one of the three")
     say("   that a hash chain and a signature cannot see. Nothing about the rigged draw")
     say("   is forged; it was simply chosen after the outcome was known.")
+    say()
+    say("d) Same idea, without touching the name. Keep the announced tag and quietly")
+    say("   change the size of the draw:")
+    for entrants in (100, 5000, 40000):
+        w = verify.reproduce_integers(public_pulse["output"], tag, 1, 1, entrants)
+        say(f"   1 winner from {entrants:>6,} -> #{w[0]}")
+    ok4, why4 = verify.check_draw(public_pulse, public_commit,
+                                  verify.reproduce_integers(public_pulse["output"], tag, 1, 1, 100),
+                                  pk, count=1, minimum=1, maximum=100)
+    say(f"   -> the receipt fixed 3 from 5,000, so: \033[1mvalid={ok4}\033[0m")
+    say(f"      ({why4})")
+    say()
+    say("e) And the one that needs no cheating at all: register twenty draws in advance,")
+    say("   all of them honest, then publish whichever wins. Every receipt predates the")
+    say("   pulse and verifies on its own -- so the public list for the round, and the")
+    say("   sequence number inside each receipt, are what make the choice visible.")
     say()
     say("The honest limit, stated plainly: this proves ordering and tamper-evidence, and")
     say("the receipt proves the creator named the draw first. It does not by itself prove")
