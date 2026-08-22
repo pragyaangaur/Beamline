@@ -11,7 +11,8 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
 
 from ... import generators as gen
-from ...entropy.beacon import verify_chain, verify_commitment, verify_pulse
+from ...entropy.beacon import (draw_spec, verify_chain, verify_commitment,
+                               verify_pulse, verify_rotation)
 from ...service import SERVICE
 from ..deps import Principal, bill, require_key
 
@@ -90,6 +91,24 @@ async def verify(round_no: int):
     }
 
 
+@router.get("/rotations")
+async def rotations():
+    """Every signing-key handover, each endorsed by the key it retired.
+
+    Public and unauthenticated, because a verifier cannot check a key change without
+    it. Trusting two keys says only that you would accept either; it does not show the
+    first one ever handed over to the second.
+    """
+    records = SERVICE.db.rotations()
+    return {
+        "count": len(records),
+        "rotations": [
+            {**r, **dict(zip(("valid", "reason"), verify_rotation(r)))} for r in records
+        ],
+        "current_public_key": SERVICE.beacon.public_key_hex,
+    }
+
+
 @router.get("/verify-chain")
 async def verify_chain_route(start: int = Query(1, ge=1), count: int = Query(50, ge=1, le=500)):
     """Verify a run of pulses end to end: links, ordering, and signatures together.
@@ -103,14 +122,20 @@ async def verify_chain_route(start: int = Query(1, ge=1), count: int = Query(50,
         raise HTTPException(404, f"no pulses from round {start}")
     signed = bool(SERVICE.beacon.public_key_hex)
     ok, reason = verify_chain(pulses, SERVICE.beacon.public_key_hex,
-                              allow_unsigned=not signed)
+                              allow_unsigned=not signed,
+                              rotations=SERVICE.db.rotations())
     return {"start": pulses[0]["round"], "end": pulses[-1]["round"],
             "count": len(pulses), "valid": ok, "reason": reason,
             "attributable": ok and signed}
 
 
 class CommitRequest(BaseModel):
-    """Announce a draw against a pulse that has not been emitted yet."""
+    """Announce a draw against a pulse that has not been emitted yet.
+
+    The draw's shape is part of the announcement, not a detail settled later. A tag
+    on its own does not determine a winner: one commitment to "giveaway-7" covers a
+    draw of one winner from 100 and one from 5000, and those name different people.
+    """
 
     tag: str = Field(..., min_length=1, max_length=256,
                      description="The exact string that names this draw. It is signed "
@@ -120,6 +145,14 @@ class CommitRequest(BaseModel):
                                 "`rounds_ahead` past the latest emitted round.")
     rounds_ahead: int = Field(1, ge=1, le=10_000,
                               description="Used when target_round is not given.")
+    kind: str = Field("integers", pattern="^(bytes|integers|shuffle|sample)$")
+    count: int = Field(1, ge=1, le=gen.MAX_COUNT)
+    min: int = 0
+    max: int = 100
+    items: list | None = Field(
+        None, description="The population, when the draw runs over one. Only its "
+                          "digest is stored, but that digest is signed -- so adding "
+                          "or removing an entrant afterwards invalidates the receipt.")
 
 
 @router.post("/commit", status_code=201)
@@ -131,15 +164,31 @@ async def commit(req: CommitRequest, p: Principal = Depends(require_key)):
     at the time, so an entrant can check the announcement predates the outcome
     instead of taking it on trust.
     """
+    if req.min > req.max:
+        raise HTTPException(400, "min must be <= max")
     try:
         receipt = SERVICE.beacon.commit(
-            req.tag, req.target_round, rounds_ahead=req.rounds_ahead, key_id=p.key_id)
+            req.tag, req.target_round, rounds_ahead=req.rounds_ahead, key_id=p.key_id,
+            kind=req.kind, count=req.count, minimum=req.min, maximum=req.max,
+            items=req.items)
     except ValueError as e:
         raise HTTPException(409, str(e)) from e
 
     bill(p, 32)
+    siblings = SERVICE.db.commitments_for_round(receipt["target_round"])
+    mine = [c for c in siblings if c.get("committer") == p.key_id]
     return {
         **receipt,
+        "your_commitments_for_this_round": len(mine),
+        "exclusivity_note": (
+            "This is your only draw against this round."
+            if len(mine) == 1 else
+            f"You now have {len(mine)} draws registered against round "
+            f"{receipt['target_round']}. Each is individually valid, and a verifier "
+            f"that fetches the public list will see all of them -- publishing only the "
+            f"one you like is grinding, and the sequence number in this receipt says "
+            f"which attempt it was."
+        ),
         "publish_this": (
             "Post the commit_id and tag now, before round "
             f"{receipt['target_round']} lands. Anyone can then fetch "
@@ -156,6 +205,8 @@ async def commitment(commit_id: str):
     receipt = SERVICE.beacon.commitment(commit_id)
     if receipt is None:
         raise HTTPException(404, f"no commitment {commit_id!r}")
+    siblings = SERVICE.db.commitments_for_round(receipt["target_round"])
+    mine = [c for c in siblings if c.get("committer") == receipt.get("committer")]
     ok, reason = verify_commitment(
         receipt, SERVICE.beacon.public_key_hex,
         allow_unsigned=not SERVICE.beacon.public_key_hex)
@@ -166,6 +217,8 @@ async def commitment(commit_id: str):
         "reason": reason,
         "target_round_emitted": pulse is not None,
         "pulse_output": pulse["output"] if pulse else None,
+        "committer_draws_for_this_round": len(mine),
+        "sibling_tags": sorted(c["tag"] for c in mine if c["commit_id"] != commit_id),
     }
 
 
@@ -234,6 +287,17 @@ async def derive(req: DeriveRequest, p: Principal = Depends(require_key)):
             raise HTTPException(
                 409, f"commitment {req.commit_id} names round "
                      f"{commitment_rec['target_round']}, not {req.round}")
+        # The shape is signed too. A tag on its own does not pick a winner: the same
+        # committed tag against the same pulse names one person at max=100 and a
+        # different one at max=5000.
+        asked = draw_spec(req.kind, req.count, req.min, req.max, req.items)
+        if commitment_rec["draw"] != asked:
+            differences = [f"{k}: committed {commitment_rec['draw'][k]!r}, "
+                           f"requested {asked[k]!r}"
+                           for k in asked if commitment_rec["draw"][k] != asked[k]]
+            raise HTTPException(
+                409, f"this draw is not the one committed under {req.commit_id}. "
+                     + "; ".join(differences))
         ok, why = verify_commitment(
             commitment_rec, SERVICE.beacon.public_key_hex,
             allow_unsigned=not SERVICE.beacon.public_key_hex)
@@ -281,6 +345,11 @@ async def derive(req: DeriveRequest, p: Principal = Depends(require_key)):
         "reproducible": True,
         "committed": commitment_rec is not None,
         "commitment": commitment_rec,
+        # The authoritative answer to "was this their only draw against this round?".
+        # A verifier holding it does not have to take the receipt's sequence number
+        # on faith, and a runner cannot omit it without the omission being visible.
+        "sibling_commitments": (
+            SERVICE.db.commitments_for_round(req.round) if commitment_rec else None),
         "provenance_note": (
             f"Announced at round {commitment_rec['created_after_round']}, decided by "
             f"round {req.round}. The deciding pulse did not exist when the draw was "
