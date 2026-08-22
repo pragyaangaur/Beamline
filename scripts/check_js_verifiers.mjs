@@ -271,20 +271,23 @@ console.log("\nthe JavaScript SDK refuses what the Python one refuses");
         (await SDK.checkDraw(pulse, { ...c, sequence: 12 }, drawn, BUNDLE.public_key, spec))[1]
           .includes("signature"));
 
-  /* Both SDKs must reproduce the same draw the page does. */
-  const { execFileSync } = await import("node:child_process");
-  const fromPython = JSON.parse(execFileSync("python3", ["-c", `
-import json, sys
-sys.path.insert(0, "sdk/python")
-from beamline_client import verify as V
-b = json.load(open("chain.json")); c = b["commitment"]
-p = [x for x in b["pulses"] if x["round"] == c["target_round"]][0]
-print(json.dumps(V.reproduce_unique_integers(p["output"], c["tag"],
-      c["draw"]["count"], c["draw"]["min"], c["draw"]["max"])))
-`], { cwd: ROOT, encoding: "utf8" }));
-  check("the JS and Python SDKs draw the same winners",
-        JSON.stringify(fromPython) === JSON.stringify(drawn),
-        `python ${JSON.stringify(fromPython)} != js ${JSON.stringify(drawn)}`);
+  /* Both SDKs must draw the same winners. Checked against a committed fixture
+     rather than by shelling out to Python: this job has Node and nothing else, and a
+     harness that reaches for another runtime fails on the runtime rather than on the
+     thing it is testing. The Python suite checks itself against the same file, so
+     drift on either side is caught. */
+  const DRAWS = JSON.parse(readFileSync(join(ROOT, "tests", "data", "draw_vectors.json"), "utf8"));
+  for (const d of DRAWS.draws) {
+    let got;
+    if (d.kind === "integers") got = await SDK.reproduceIntegers(DRAWS.pulse_output, d.tag, d.count, d.min, d.max);
+    else if (d.kind === "sample") got = await SDK.reproduceUniqueIntegers(DRAWS.pulse_output, d.tag, d.count, d.min, d.max);
+    else if (d.kind === "shuffle") got = await SDK.reproduceShuffle(DRAWS.pulse_output, d.tag, d.items);
+    else if (d.kind === "bytes") got = await SDK.reproduceBytes(DRAWS.pulse_output, d.tag, d.count);
+    else { check(`unknown draw kind ${d.kind}`, false); continue; }
+    check(`reproduces ${d.kind} "${d.tag}" exactly`,
+          JSON.stringify(got) === JSON.stringify(d.expected),
+          `expected ${JSON.stringify(d.expected).slice(0, 60)}, got ${JSON.stringify(got).slice(0, 60)}`);
+  }
 
   /* The two SDKs and the two pages must agree byte for byte, or an honest pulse
      verifies in one place and fails in another. */
