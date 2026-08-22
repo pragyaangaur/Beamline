@@ -59,6 +59,9 @@ class FairDraw:
     params: dict
     pulse: dict | None = None
     commitment: dict | None = None
+    #: Every commitment registered against this round, so `check()` can answer
+    #: whether this was the committer's only draw rather than trusting the receipt.
+    siblings: list | None = None
     public_key: str | None = None
 
     @property
@@ -96,6 +99,7 @@ class FairDraw:
             self.pulse, self.commitment, self.data, key, kind=self.kind,
             items=self.params.get("items"), count=self.params.get("count", 1),
             minimum=self.params.get("min", 0), maximum=self.params.get("max", 100),
+            siblings=self.siblings,
         )
 
     def _recompute(self):
@@ -203,22 +207,42 @@ class Beamline:
     def public_key(self) -> str | None:
         return self._request("GET", "/v1/beacon/public-key")["public_key"]
 
-    def verify_chain(self, start: int = 1, count: int = 100) -> tuple[bool, str]:
-        """Pull a run of pulses and check it locally, end to end."""
+    def rotations(self) -> list[dict]:
+        return self._request("GET", "/v1/beacon/rotations")["rotations"]
+
+    def verify_chain(self, start: int = 1, count: int = 100,
+                     public_key: str | None = None,
+                     trusted_keys=None) -> tuple[bool, str]:
+        """Pull a run of pulses and check it locally, end to end.
+
+        `public_key` defaults to the server's own, which establishes only that the
+        server agrees with itself. Pass a key you recorded out of band for an answer
+        worth having.
+        """
         pulses = self._request("GET", "/v1/beacon/chain",
                                params={"start": start, "count": count})["pulses"]
-        return _v.check_chain(pulses, self.public_key())
+        return _v.check_chain(pulses, public_key or self.public_key(),
+                              trusted_keys=trusted_keys, rotations=self.rotations())
 
     def commit(self, tag: str, target_round: int | None = None,
-               rounds_ahead: int = 1) -> dict:
+               rounds_ahead: int = 1, *, kind: str = "integers", count: int = 1,
+               min: int = 0, max: int = 100, items: list | None = None) -> dict:
         """Announce a draw against a pulse that does not exist yet.
+
+        The shape of the draw is part of the announcement. A tag on its own does not
+        pick a winner -- the same tag against the same pulse names one person at
+        max=100 and a different one at max=5000 -- so kind, count, bounds and the
+        entry list are signed into the receipt alongside it.
 
         Publish the returned `commit_id` and `tag` immediately. That receipt is what
         an entrant checks later to see the draw was named before the outcome existed.
         """
-        body = {"tag": tag, "rounds_ahead": rounds_ahead}
+        body = {"tag": tag, "rounds_ahead": rounds_ahead, "kind": kind,
+                "count": count, "min": min, "max": max}
         if target_round is not None:
             body["target_round"] = target_round
+        if items is not None:
+            body["items"] = items
         return self._request("POST", "/v1/beacon/commit", json=body)
 
     def commitment(self, commit_id: str) -> dict:
@@ -243,11 +267,9 @@ class Beamline:
         """
         receipt = None
         if commit:
-            if round is not None:
-                receipt = self.commit(tag, target_round=round)
-            else:
-                receipt = self.commit(tag)
-                round = receipt["target_round"]
+            receipt = self.commit(tag, target_round=round, kind=kind, count=count,
+                                  min=min, max=max, items=items)
+            round = receipt["target_round"]
             self.wait_for_round(round, timeout=timeout)
         elif round is None:
             round = self.latest_pulse()["round"]
@@ -265,6 +287,7 @@ class Beamline:
             params={"count": count, "min": min, "max": max, "items": items},
             pulse=self._request("GET", f"/v1/beacon/pulse/{r['round']}"),
             commitment=r.get("commitment"),
+            siblings=r.get("sibling_commitments"),
             public_key=self.public_key(),
         )
 

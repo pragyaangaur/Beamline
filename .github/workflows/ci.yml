@@ -25,6 +25,11 @@ jobs:
   # are attacked here too. They live in three separate files and had three copies of
   # the same holes; this is what stops a fix landing in one and being forgotten in the
   # other two.
+  #
+  # Node and nothing else, deliberately. The harness once shelled out to Python for a
+  # cross-SDK comparison and failed here on the missing runtime rather than on
+  # anything it was testing. Both sides now check themselves against committed
+  # vectors, and keeping this job bare is what stops that coupling coming back.
   verifiers:
     runs-on: ubuntu-latest
     steps:
@@ -54,3 +59,16 @@ jobs:
 
       - name: The published chain and draw record must verify
         run: pytest -q tests/test_site.py tests/test_attacks.py
+
+      # verify.py promises it needs only the standard library and cryptography. A
+      # reader who takes that at face value and installs neither the package nor an
+      # HTTP client should still be able to check a draw.
+      - name: The verifier imports on its own
+        run: |
+          cd "$(mktemp -d)"
+          cp -r "$GITHUB_WORKSPACE/sdk/python" .
+          python3 -c "
+          import sys; sys.path.insert(0, 'python')
+          from beamline_client import check_draw, reproduce_unique_integers
+          print('verifier imports with no package install:', bool(check_draw))
+          "

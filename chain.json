@@ -1,503 +1,492 @@
 {
- "public_key": "00ac3492b4a97f05e6c07a0afbc65e0cc944a2639cef0b646dc8fd04c84a0cbf",
+ "public_key": "bd3d2af9ff2ca0b51ced1e9e7fc35d5626b6132265d0d8bc16b40f466f438790",
  "period_seconds": 60,
  "pulses": [
   {
    "version": "beamline/pulse/v3",
    "round": 1,
-   "timestamp_ms": 1787331155501,
+   "timestamp_ms": 1787374207377,
    "period_seconds": 60,
    "prev_output": "00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000",
-   "local_value": "83f5c48a4beeab4b46bf816a426ac91628d6dd27004bc1e81a6858ebcd07d3c27509af9ef17923999318178f73202c5233385976083362eda40eddffe5602b7d",
-   "public_key": "00ac3492b4a97f05e6c07a0afbc65e0cc944a2639cef0b646dc8fd04c84a0cbf",
+   "local_value": "dba68560a6c5a7a34fa3e072b5622cad4a75f0dc5e589777f05c901a856036704afa2a25dcf6854d4106d88cd4d2ca9805ae9ea8139553d26bd0f5ca55fe3c8b",
+   "public_key": "bd3d2af9ff2ca0b51ced1e9e7fc35d5626b6132265d0d8bc16b40f466f438790",
    "provenance": {
     "local_os": {
-     "at_ms": 1787331151500,
+     "at_ms": 1787374205377,
      "bytes": 64,
-     "digest": "3f5e0288921ccb678587610e067ced0ceef70a69e4c07b76194afa5149a06d9f",
+     "digest": "d072d8f8c0b66868611558c4780d32499561785be0964f556083a346574e9d56",
      "provider": "kernel getrandom(2)"
     },
     "anu_qrng": {
-     "at_ms": 1787331153510,
-     "bytes": 1530,
-     "digest": "c2bb563dcaec7be7077b4429e644f6636ad2c4faf3a4474d32a74c9f5937fd00",
-     "provider": "local_archive",
-     "blocks": 2,
-     "chars": 2048,
-     "source_entropy_bits": 12241,
-     "remaining_blocks": 3898
-    },
-    "astro": {
-     "at_ms": 1787331153710,
-     "bytes": 871,
-     "digest": "d194b15c2c4b487af7d1a6042c3a94f12fabc0f2bb314f7d136d959b4823a5a3",
-     "feeds": {
-      "goes_xray": {
-       "rows": 6,
-       "latest_time_tag": "2026-08-21T16:48:00Z"
-      },
-      "solar_wind_plasma": {
-       "rows": 6,
-       "latest_time_tag": "2026-08-20T16:51:00"
-      },
-      "solar_wind_mag": {
-       "rows": 6,
-       "latest_time_tag": "2026-08-20T16:51:00"
-      }
-     },
-     "advanced": true
+     "at_ms": 1787374206344,
+     "bytes": 765,
+     "digest": "3ec9cf6686d67c27cc54af525ee5585e638aaafcf04b32e995792c2bd6c951c9",
+     "provider": "anu_public_endpoint",
+     "chars": 1024
     }
    },
-   "output": "b14da3fa1d9aac85c5b043bf7928fc5099f3deaaf8c81cc3a68fbaa7bbc49ce1b958f9c72ecccc15379cc81f34881b52335e6002757bd2ebb7eca11d88b025f1",
-   "signature": "e2b3bf68eece6219defc74445c492676ae6c7efd36fe62c5b8510c9b85c2b950fe16428fb33da970a7ccbc0f54fdfb7b0126c64379f37fc42958e48694e39601"
+   "output": "374896c5665743ddd173368926d6d5f58007c885df69d5a9c2254b8b0ae5c6d5afd912e53bccc1e99f3d19d2f91fbd2b5441c17d04fed3092c86e7695fea1b85",
+   "signature": "b07ee8ff70647601e1fb3360dc7de3b494073535cb2e6d688d8eb0cd8df8de6dceffef13deb36b301c597abb6098bda1d6e0e580cbf41d666a3d5d5f123b780b"
   },
   {
    "version": "beamline/pulse/v3",
    "round": 2,
-   "timestamp_ms": 1787331159504,
+   "timestamp_ms": 1787374209379,
    "period_seconds": 60,
-   "prev_output": "b14da3fa1d9aac85c5b043bf7928fc5099f3deaaf8c81cc3a68fbaa7bbc49ce1b958f9c72ecccc15379cc81f34881b52335e6002757bd2ebb7eca11d88b025f1",
-   "local_value": "64508a04d54cce9a9556c611428f41ba25aa0e21cf3ed88430c1dd581c250af219374b774eb534fcca807f77f2d0fb91d0956122df4aa42b7e44ef628827b37f",
-   "public_key": "00ac3492b4a97f05e6c07a0afbc65e0cc944a2639cef0b646dc8fd04c84a0cbf",
+   "prev_output": "374896c5665743ddd173368926d6d5f58007c885df69d5a9c2254b8b0ae5c6d5afd912e53bccc1e99f3d19d2f91fbd2b5441c17d04fed3092c86e7695fea1b85",
+   "local_value": "bcb431f9599663c51b09b67ae2b197c074d48543e5e36c59a1b772017470a1e2673d6172b61cd705499ee7c7e9971cf19297c3ce801cebe84eaf71b7506dc094",
+   "public_key": "bd3d2af9ff2ca0b51ced1e9e7fc35d5626b6132265d0d8bc16b40f466f438790",
    "provenance": {
     "local_os": {
-     "at_ms": 1787331156501,
+     "at_ms": 1787374205377,
      "bytes": 64,
-     "digest": "768429d050f4a4d8eeadf97877c3f43604780502f5f1087aff98edb0a6b29e19",
+     "digest": "d072d8f8c0b66868611558c4780d32499561785be0964f556083a346574e9d56",
      "provider": "kernel getrandom(2)"
     },
     "anu_qrng": {
-     "at_ms": 1787331157521,
+     "at_ms": 1787374207382,
      "bytes": 1530,
-     "digest": "d056a07c7183f523a14ef90129f035b5dd8fb80672ff520020cccc7ad520754b",
+     "digest": "92a437ba55c087b5bfa44a3244bb623ddd7ef53a97fe031f81166c3e96f18f75",
      "provider": "local_archive",
      "blocks": 2,
      "chars": 2048,
      "source_entropy_bits": 12241,
-     "remaining_blocks": 3894
+     "remaining_blocks": 3754
     },
     "astro": {
-     "at_ms": 1787331153710,
+     "at_ms": 1787374207543,
      "bytes": 871,
-     "digest": "d194b15c2c4b487af7d1a6042c3a94f12fabc0f2bb314f7d136d959b4823a5a3",
+     "digest": "1f26df9cb4287a8b50ce0f44b3f518e8a1b279837ea4f7324e7dbe6d5886a4e3",
      "feeds": {
       "goes_xray": {
        "rows": 6,
-       "latest_time_tag": "2026-08-21T16:48:00Z"
+       "latest_time_tag": "2026-08-22T04:47:00Z"
       },
       "solar_wind_plasma": {
        "rows": 6,
-       "latest_time_tag": "2026-08-20T16:51:00"
+       "latest_time_tag": "2026-08-21T04:48:00"
       },
       "solar_wind_mag": {
        "rows": 6,
-       "latest_time_tag": "2026-08-20T16:51:00"
+       "latest_time_tag": "2026-08-21T04:48:00"
       }
      },
      "advanced": true
     }
    },
-   "output": "65dee7fd8a425bb1587921e74469e2b371b3a93ad62cbb8772405d5f966e5eea53cf0dc8b89a85082425aa85d7263b3007b3d9ef1326dd5eb86139f3d1433007",
-   "signature": "472e6bdc7e5abcc5da59808c93dbc31e0f8d4185dd48f076322e10e7ed5b27c926db935da6f28156f3b0f750f7c4597332c6cf1776ce1fb22a4a530d57a94100"
+   "output": "3cf0b7045b37fcf0617512a947135ca6cfb4a50dd51c2901b0b03f486d17014ffb9aa84164133d762dea7c4f125f54ba535e237f3d67ff4d51ee1dad86ad3320",
+   "signature": "c26df6e6500a564f08094c56a40ddf455f87c6390f898bc4cabef641fa21fed91b53c12298f7d990d8abdc6b657bafae2d396590e0cb1e1b7ae0b9a7bde3f204"
   },
   {
    "version": "beamline/pulse/v3",
    "round": 3,
-   "timestamp_ms": 1787331163507,
+   "timestamp_ms": 1787374211381,
    "period_seconds": 60,
-   "prev_output": "65dee7fd8a425bb1587921e74469e2b371b3a93ad62cbb8772405d5f966e5eea53cf0dc8b89a85082425aa85d7263b3007b3d9ef1326dd5eb86139f3d1433007",
-   "local_value": "0b27a968915cbd361cd8c2e6cb19e338cf51c0e49a2cbaced2099ff7c35e900a5b6406492370c5db81b99ed273be29d69ddefba3d373ce37cf2cfc5d25e197b7",
-   "public_key": "00ac3492b4a97f05e6c07a0afbc65e0cc944a2639cef0b646dc8fd04c84a0cbf",
+   "prev_output": "3cf0b7045b37fcf0617512a947135ca6cfb4a50dd51c2901b0b03f486d17014ffb9aa84164133d762dea7c4f125f54ba535e237f3d67ff4d51ee1dad86ad3320",
+   "local_value": "40c550f5ce12d00f7b26a628bae6ecc08537d35bf1e5dc30f6e02ecf8fca32481a45ecb6cb92e308537a52e5d751822d7688aaa44bda8ce7c49b365dd1f7fa3c",
+   "public_key": "bd3d2af9ff2ca0b51ced1e9e7fc35d5626b6132265d0d8bc16b40f466f438790",
    "provenance": {
     "local_os": {
-     "at_ms": 1787331161503,
+     "at_ms": 1787374210378,
      "bytes": 64,
-     "digest": "26c8ec4ff3edb2b289cc2227fb31caeaa4e5e651a5387bb9f08a471ac589c6a9",
+     "digest": "b011302a14d0a337b961fd490fcd9502a3f9743a31c9b50419b804b93e4d3043",
      "provider": "kernel getrandom(2)"
     },
     "anu_qrng": {
-     "at_ms": 1787331161534,
+     "at_ms": 1787374209387,
      "bytes": 1530,
-     "digest": "fa9f26c6135c2064dd3344b3f2de90a53239da12a6c3cf629488dd2340aef255",
+     "digest": "36edae10f143c9a761655a5c432ccafcf9f4170d688e9adfc64379f57948046a",
      "provider": "local_archive",
      "blocks": 2,
      "chars": 2048,
      "source_entropy_bits": 12241,
-     "remaining_blocks": 3890
+     "remaining_blocks": 3752
     },
     "astro": {
-     "at_ms": 1787331153710,
+     "at_ms": 1787374207543,
      "bytes": 871,
-     "digest": "d194b15c2c4b487af7d1a6042c3a94f12fabc0f2bb314f7d136d959b4823a5a3",
+     "digest": "1f26df9cb4287a8b50ce0f44b3f518e8a1b279837ea4f7324e7dbe6d5886a4e3",
      "feeds": {
       "goes_xray": {
        "rows": 6,
-       "latest_time_tag": "2026-08-21T16:48:00Z"
+       "latest_time_tag": "2026-08-22T04:47:00Z"
       },
       "solar_wind_plasma": {
        "rows": 6,
-       "latest_time_tag": "2026-08-20T16:51:00"
+       "latest_time_tag": "2026-08-21T04:48:00"
       },
       "solar_wind_mag": {
        "rows": 6,
-       "latest_time_tag": "2026-08-20T16:51:00"
+       "latest_time_tag": "2026-08-21T04:48:00"
       }
      },
      "advanced": true
     }
    },
-   "output": "e90dac25f2b4537fe33cddeedb92967a3c83251c6a7213dd81ce561fa99a55aa47892f946d40d41b05d806bcc5997ed5cfc57e360d2a9a4d06157a1e0b01d93a",
-   "signature": "e46ba8b21ef157125b494e5bd17a21079498206338827096c8b5052b9833e7e0455eba7c5fc74a0482d51180a91b073a72a871a65b01c4feac960346112d3b0d"
+   "output": "af038bf6698ec5c2791357fd04961f3dc9fe68f9cbaf689c296fbdb782deb3fd20976a93935da47f0b7ad5a77f16f872f3743d55e477fe3adb53f2f5832448ae",
+   "signature": "1e518d9f2fff272a8c9bd97a312997f2f9f48c14e1a9330900e205762bd227d2bd63e77a5482d212ef18a6ea11e4849171d8f4df869a6f10db4fb30d9ce0470b"
   },
   {
    "version": "beamline/pulse/v3",
    "round": 4,
-   "timestamp_ms": 1787331167510,
+   "timestamp_ms": 1787374213383,
    "period_seconds": 60,
-   "prev_output": "e90dac25f2b4537fe33cddeedb92967a3c83251c6a7213dd81ce561fa99a55aa47892f946d40d41b05d806bcc5997ed5cfc57e360d2a9a4d06157a1e0b01d93a",
-   "local_value": "cc3cf7a5ceec10e253fa5ae8d4521007aa86d63af4b41ab3fd119dfd891212145f4922f3be65e1fdc14451f1528a0dba1f4809fe9632a3bfe8e5533f1a79c97f",
-   "public_key": "00ac3492b4a97f05e6c07a0afbc65e0cc944a2639cef0b646dc8fd04c84a0cbf",
+   "prev_output": "af038bf6698ec5c2791357fd04961f3dc9fe68f9cbaf689c296fbdb782deb3fd20976a93935da47f0b7ad5a77f16f872f3743d55e477fe3adb53f2f5832448ae",
+   "local_value": "7b3f89f11e649c0ff0095e9b042b0ae1efb2a916c58c1a3eb449c1dbd15ef3a6803baa3ab0502baa36677b66c24d89088bf06efee77419aa9580dac603024a66",
+   "public_key": "bd3d2af9ff2ca0b51ced1e9e7fc35d5626b6132265d0d8bc16b40f466f438790",
    "provenance": {
     "local_os": {
-     "at_ms": 1787331166504,
+     "at_ms": 1787374210378,
      "bytes": 64,
-     "digest": "f1ce864c5761882046a0850e6850fa447c5ceee79a8e9b314e63a85ff03b366a",
+     "digest": "b011302a14d0a337b961fd490fcd9502a3f9743a31c9b50419b804b93e4d3043",
      "provider": "kernel getrandom(2)"
     },
     "anu_qrng": {
-     "at_ms": 1787331165546,
+     "at_ms": 1787374211392,
      "bytes": 1530,
-     "digest": "b638af11f38f6855fce6a4b4afa5e5f60eb626961faad62be6910bc7ea850291",
+     "digest": "eb8a9c3617e7edd8a6949a69b4761fe94b49836943cd82b623967d213c355f65",
      "provider": "local_archive",
      "blocks": 2,
      "chars": 2048,
      "source_entropy_bits": 12241,
-     "remaining_blocks": 3886
+     "remaining_blocks": 3750
     },
     "astro": {
-     "at_ms": 1787331153710,
+     "at_ms": 1787374207543,
      "bytes": 871,
-     "digest": "d194b15c2c4b487af7d1a6042c3a94f12fabc0f2bb314f7d136d959b4823a5a3",
+     "digest": "1f26df9cb4287a8b50ce0f44b3f518e8a1b279837ea4f7324e7dbe6d5886a4e3",
      "feeds": {
       "goes_xray": {
        "rows": 6,
-       "latest_time_tag": "2026-08-21T16:48:00Z"
+       "latest_time_tag": "2026-08-22T04:47:00Z"
       },
       "solar_wind_plasma": {
        "rows": 6,
-       "latest_time_tag": "2026-08-20T16:51:00"
+       "latest_time_tag": "2026-08-21T04:48:00"
       },
       "solar_wind_mag": {
        "rows": 6,
-       "latest_time_tag": "2026-08-20T16:51:00"
+       "latest_time_tag": "2026-08-21T04:48:00"
       }
      },
      "advanced": true
     }
    },
-   "output": "397d14d1f7a65482797253589a4dd9d14264b26f9595bb44c8249346b6a49090cc82037db792b26391ddbe9ecc67949fe86bcfc7c79406fc586be720d549f90d",
-   "signature": "28df4332f8531c1058e11b0a64f90615f5c08e322b6eaf894ce4e341024a834b44667ecf7bb3f1225c18e8d90ee0feda45691f2a6f7d8d7a0f72be2a0dfd720b"
+   "output": "20da312d42ebae7acb30843244ad96944fa0b77341f01c878f8d985efd1f6634b5da53c5b6a8d754210c3b6374844d9f8118072407cd73ee89fff156ae90be07",
+   "signature": "00a99d4805bb47aeda5ee1f964e3f3febdaf8bb0dee7f3846832e9ccf0785b9a2e8b0d2674685d9a5e675128e482f4d27b3bc002113b2a407944b2512d3fe406"
   },
   {
    "version": "beamline/pulse/v3",
    "round": 5,
-   "timestamp_ms": 1787331171512,
+   "timestamp_ms": 1787374215386,
    "period_seconds": 60,
-   "prev_output": "397d14d1f7a65482797253589a4dd9d14264b26f9595bb44c8249346b6a49090cc82037db792b26391ddbe9ecc67949fe86bcfc7c79406fc586be720d549f90d",
-   "local_value": "885d2fb82dcc739753ebdfa1db18009e9ab8ca2027d75de597223ec24993010b99e5a54d67b5976f1e5ccba1d3044470f8c6d1049d530eefd49b69f75173dfdc",
-   "public_key": "00ac3492b4a97f05e6c07a0afbc65e0cc944a2639cef0b646dc8fd04c84a0cbf",
+   "prev_output": "20da312d42ebae7acb30843244ad96944fa0b77341f01c878f8d985efd1f6634b5da53c5b6a8d754210c3b6374844d9f8118072407cd73ee89fff156ae90be07",
+   "local_value": "66173cbc8ed33fd8b73053b0c6464e9e519fa77bbc85fae56daccccf6df02531c4c0ec680ce2331538de214158c1833b97caa6dbe0c4cf6db6922729d722e61d",
+   "public_key": "bd3d2af9ff2ca0b51ced1e9e7fc35d5626b6132265d0d8bc16b40f466f438790",
    "provenance": {
     "local_os": {
-     "at_ms": 1787331171505,
+     "at_ms": 1787374215379,
      "bytes": 64,
-     "digest": "95857ec8989d34f7a76ec2eaadf5a0d025732e4a43281a4db1c57e4f66868df9",
+     "digest": "bf9214e38192a707585f95a2033189329f58f1d02cad60a9f19ee729e9238b5a",
      "provider": "kernel getrandom(2)"
     },
     "anu_qrng": {
-     "at_ms": 1787331169560,
+     "at_ms": 1787374213396,
      "bytes": 1530,
-     "digest": "ca0f4b667b48348b3e3f181897bb907d1eef95299cf6dfb23fe208d89b231830",
+     "digest": "fc2ecb8bf99b203db715f6ae1812fcee95b8fdcb647f8fb8887f7aa14bb2850b",
      "provider": "local_archive",
      "blocks": 2,
      "chars": 2048,
      "source_entropy_bits": 12241,
-     "remaining_blocks": 3882
+     "remaining_blocks": 3748
     },
     "astro": {
-     "at_ms": 1787331153710,
+     "at_ms": 1787374207543,
      "bytes": 871,
-     "digest": "d194b15c2c4b487af7d1a6042c3a94f12fabc0f2bb314f7d136d959b4823a5a3",
+     "digest": "1f26df9cb4287a8b50ce0f44b3f518e8a1b279837ea4f7324e7dbe6d5886a4e3",
      "feeds": {
       "goes_xray": {
        "rows": 6,
-       "latest_time_tag": "2026-08-21T16:48:00Z"
+       "latest_time_tag": "2026-08-22T04:47:00Z"
       },
       "solar_wind_plasma": {
        "rows": 6,
-       "latest_time_tag": "2026-08-20T16:51:00"
+       "latest_time_tag": "2026-08-21T04:48:00"
       },
       "solar_wind_mag": {
        "rows": 6,
-       "latest_time_tag": "2026-08-20T16:51:00"
+       "latest_time_tag": "2026-08-21T04:48:00"
       }
      },
      "advanced": true
     }
    },
-   "output": "5d0843fdfd0398db8466c0a099d7e10026d9320fccab9975ed503b7b60e0433dad428c813576c7ee89e72c9b255bae93cf4ffe04313a8a91b0792e4a1b4a3114",
-   "signature": "83b0f2b4f13daf56831bce975bc2ecedc3d01e33bad3c0620c6424f8ea4e9849b1d2c077947f9c92ce775b6f9cfe1a2fdfa4806bd76699f0d899c0f518b2d508"
+   "output": "2e643c378d856cddc36384db67337b5e7985c179b30e328d71dcd71d02c4d899988041353650e6a0fb600419b9f24a92fbd19d83bdd3935321ae999d94e96f09",
+   "signature": "fc3c4614ddec47a69e51ab28dcd1d7637acd0a90c0973a7e57877d60ddd799d4c7171ab4738659f6ba5f6115811d2ab1de2921b8cdfd25606acb64ab5654f00f"
   },
   {
    "version": "beamline/pulse/v3",
    "round": 6,
-   "timestamp_ms": 1787331175514,
+   "timestamp_ms": 1787374217388,
    "period_seconds": 60,
-   "prev_output": "5d0843fdfd0398db8466c0a099d7e10026d9320fccab9975ed503b7b60e0433dad428c813576c7ee89e72c9b255bae93cf4ffe04313a8a91b0792e4a1b4a3114",
-   "local_value": "181963b972cf4d3ce79655849a022c601e59f7059ef07b191d199147faf11d560895bd8e014911cec325cc3fa38a0ff0de7aafd7335a48e6f5a0247f1d1f39fa",
-   "public_key": "00ac3492b4a97f05e6c07a0afbc65e0cc944a2639cef0b646dc8fd04c84a0cbf",
+   "prev_output": "2e643c378d856cddc36384db67337b5e7985c179b30e328d71dcd71d02c4d899988041353650e6a0fb600419b9f24a92fbd19d83bdd3935321ae999d94e96f09",
+   "local_value": "d1cd2f51eddff41fba05750f42747be90f486bb8aff01ecdbc4f3d8c905e432da9340bb20fbf6376f39a470fc20c7f3cfadc89ee654935b4cc49705d2cb608be",
+   "public_key": "bd3d2af9ff2ca0b51ced1e9e7fc35d5626b6132265d0d8bc16b40f466f438790",
    "provenance": {
     "local_os": {
-     "at_ms": 1787331171505,
+     "at_ms": 1787374215379,
      "bytes": 64,
-     "digest": "95857ec8989d34f7a76ec2eaadf5a0d025732e4a43281a4db1c57e4f66868df9",
+     "digest": "bf9214e38192a707585f95a2033189329f58f1d02cad60a9f19ee729e9238b5a",
      "provider": "kernel getrandom(2)"
     },
     "anu_qrng": {
-     "at_ms": 1787331173619,
-     "bytes": 765,
-     "digest": "9ba9d963b25aa48b50501452cd1552ea4fd07e9492bfb9cd5a6366efd6ee5f3a",
-     "provider": "anu_public_endpoint",
-     "chars": 1024
+     "at_ms": 1787374215401,
+     "bytes": 1530,
+     "digest": "b3ba2d9c32afbfe78004af0b6a0608a7c6da8d1ca3af3686918d1061e8fa9ef9",
+     "provider": "local_archive",
+     "blocks": 2,
+     "chars": 2048,
+     "source_entropy_bits": 12241,
+     "remaining_blocks": 3746
     },
     "astro": {
-     "at_ms": 1787331153710,
+     "at_ms": 1787374207543,
      "bytes": 871,
-     "digest": "d194b15c2c4b487af7d1a6042c3a94f12fabc0f2bb314f7d136d959b4823a5a3",
+     "digest": "1f26df9cb4287a8b50ce0f44b3f518e8a1b279837ea4f7324e7dbe6d5886a4e3",
      "feeds": {
       "goes_xray": {
        "rows": 6,
-       "latest_time_tag": "2026-08-21T16:48:00Z"
+       "latest_time_tag": "2026-08-22T04:47:00Z"
       },
       "solar_wind_plasma": {
        "rows": 6,
-       "latest_time_tag": "2026-08-20T16:51:00"
+       "latest_time_tag": "2026-08-21T04:48:00"
       },
       "solar_wind_mag": {
        "rows": 6,
-       "latest_time_tag": "2026-08-20T16:51:00"
+       "latest_time_tag": "2026-08-21T04:48:00"
       }
      },
      "advanced": true
     }
    },
-   "output": "28273665b9a3a99c0fe9fe7fe2b17f2efa99b328c0e9f9e7162a15032910b4c03ba4f086974195919ff370a5e2b90b3679bbdf58af3e6f009ffc2f7d30811830",
-   "signature": "3e9758560973b9240ca0b8084bea7a50a7aede43430fd57b12f3744d1ea54bc163c6645b0efddd62c5b83e18ef71b8b72a5bd396e3ef0b68b8f29fa12b655403"
+   "output": "617457cc5eae4f1924aeb9d9a4f12dd692b9eb33852be36766f35f721fdc0a0733aff31571aa9cca0d0182956b79c1467335c16d872ddcf627690ed3d791abc6",
+   "signature": "ea68199b2c9c5e765bd6e0a09472c09cc83c4a1917935d9199034a242aa5d6735c73147f65e50069d7d73efd2b3384bcaa7c839c19180a0e0a3020b17995350c"
   },
   {
    "version": "beamline/pulse/v3",
    "round": 7,
-   "timestamp_ms": 1787331179516,
+   "timestamp_ms": 1787374219390,
    "period_seconds": 60,
-   "prev_output": "28273665b9a3a99c0fe9fe7fe2b17f2efa99b328c0e9f9e7162a15032910b4c03ba4f086974195919ff370a5e2b90b3679bbdf58af3e6f009ffc2f7d30811830",
-   "local_value": "f83c50498fa13389d7bb5e750eb720147770c49555b185ded31834804c03402911ad65358b97241a9863c18affac3425f4a48e1fb5ebae25bbbcf0ba7fe84d8b",
-   "public_key": "00ac3492b4a97f05e6c07a0afbc65e0cc944a2639cef0b646dc8fd04c84a0cbf",
+   "prev_output": "617457cc5eae4f1924aeb9d9a4f12dd692b9eb33852be36766f35f721fdc0a0733aff31571aa9cca0d0182956b79c1467335c16d872ddcf627690ed3d791abc6",
+   "local_value": "efd2b9eef2050815e4abd30aa0059a5ad126a4a13c02bd8febfa7368e5b6d655a7877814fe077d8e83bba3721c08a3d60224850d05113de6913f78b7fa1feef9",
+   "public_key": "bd3d2af9ff2ca0b51ced1e9e7fc35d5626b6132265d0d8bc16b40f466f438790",
    "provenance": {
     "local_os": {
-     "at_ms": 1787331176506,
+     "at_ms": 1787374215379,
      "bytes": 64,
-     "digest": "3a126e09dde9f9f55b945d074776e235645b25d41bb4cd62d8bf5b29358657f3",
+     "digest": "bf9214e38192a707585f95a2033189329f58f1d02cad60a9f19ee729e9238b5a",
      "provider": "kernel getrandom(2)"
     },
     "anu_qrng": {
-     "at_ms": 1787331177585,
+     "at_ms": 1787374217406,
      "bytes": 1530,
-     "digest": "320529bd4558c375bb4d3b267d48bcd2407a5ed3cf1fd2db1c28d2f37a6c2b72",
+     "digest": "902163a6fd9376cb42c24c22810adab046903cfa3b8c192602cb07cfea970b49",
      "provider": "local_archive",
      "blocks": 2,
      "chars": 2048,
      "source_entropy_bits": 12241,
-     "remaining_blocks": 3874
+     "remaining_blocks": 3744
     },
     "astro": {
-     "at_ms": 1787331153710,
+     "at_ms": 1787374207543,
      "bytes": 871,
-     "digest": "d194b15c2c4b487af7d1a6042c3a94f12fabc0f2bb314f7d136d959b4823a5a3",
+     "digest": "1f26df9cb4287a8b50ce0f44b3f518e8a1b279837ea4f7324e7dbe6d5886a4e3",
      "feeds": {
       "goes_xray": {
        "rows": 6,
-       "latest_time_tag": "2026-08-21T16:48:00Z"
+       "latest_time_tag": "2026-08-22T04:47:00Z"
       },
       "solar_wind_plasma": {
        "rows": 6,
-       "latest_time_tag": "2026-08-20T16:51:00"
+       "latest_time_tag": "2026-08-21T04:48:00"
       },
       "solar_wind_mag": {
        "rows": 6,
-       "latest_time_tag": "2026-08-20T16:51:00"
+       "latest_time_tag": "2026-08-21T04:48:00"
       }
      },
      "advanced": true
     }
    },
-   "output": "3c3c248bc728e8353d6613f9a3448349d22369660186a6ddeacc73992159c79b4e3f2385a060bab14f31967efa490e8aea00ed26a2c86ef582bcb6aa668a26c0",
-   "signature": "d411e576288b16330a1d59711690673fdac1c3b38bfe7cfce5519d5f11f9726dcedc4d305b76d84a93f3c5e29c4e646596f7d2185468c611335f32290d4d1305"
+   "output": "9938304cf3188a1e5347266e614138ab10c32b5415f08af5f81b037db3e64b2a3f917b4e1dd48964b5e8ab539315edb5f8b63ebb2c9f84ceab0671d924a23a73",
+   "signature": "1be065525b428f736fe991a3b7ea30dbf6380962989a20df8fe0ef04af44744541f47b7fdb44d791ed2a7657145bd61afec0682bb4c257636c7be55eedd1ce04"
   },
   {
    "version": "beamline/pulse/v3",
    "round": 8,
-   "timestamp_ms": 1787331183518,
+   "timestamp_ms": 1787374221391,
    "period_seconds": 60,
-   "prev_output": "3c3c248bc728e8353d6613f9a3448349d22369660186a6ddeacc73992159c79b4e3f2385a060bab14f31967efa490e8aea00ed26a2c86ef582bcb6aa668a26c0",
-   "local_value": "a02a69f6606b0ae79f51843c0533cc45ecf5916aec1dff22c1bc84fc7bb0b828b17f39b8bfe4d6cb2f2a6441c7518c2ae7907a80d16afdd58c1f5a2e1a206a4f",
-   "public_key": "00ac3492b4a97f05e6c07a0afbc65e0cc944a2639cef0b646dc8fd04c84a0cbf",
+   "prev_output": "9938304cf3188a1e5347266e614138ab10c32b5415f08af5f81b037db3e64b2a3f917b4e1dd48964b5e8ab539315edb5f8b63ebb2c9f84ceab0671d924a23a73",
+   "local_value": "e079a2fef29be6f44669302547d9b62cbf4d9c6d5752624ef6c63b65101959e3eda75c2f6d9a9297b1556944fc57ad4e269f37cb7aad01ad8133dca7bddf681d",
+   "public_key": "bd3d2af9ff2ca0b51ced1e9e7fc35d5626b6132265d0d8bc16b40f466f438790",
    "provenance": {
     "local_os": {
-     "at_ms": 1787331181507,
+     "at_ms": 1787374220380,
      "bytes": 64,
-     "digest": "aa95415cc73638742d674b879f0a01ac3e77a5b9dbf22627493e9acb38625dc6",
+     "digest": "224b24e3ee30ad5ad2e5b93ca9a15269267fbe247e72d2d989f8de77f6034a40",
      "provider": "kernel getrandom(2)"
     },
     "anu_qrng": {
-     "at_ms": 1787331181597,
+     "at_ms": 1787374219410,
      "bytes": 1530,
-     "digest": "d90a7ee0aadcda8c955cfc3a34a34833162fe5adaca1eb89dff3436947e16d10",
+     "digest": "a0dc46bc67186196e787d89080e0c41ee902b0eaafcb4638d198123cc4acd373",
      "provider": "local_archive",
      "blocks": 2,
      "chars": 2048,
      "source_entropy_bits": 12241,
-     "remaining_blocks": 3870
+     "remaining_blocks": 3742
     },
     "astro": {
-     "at_ms": 1787331153710,
+     "at_ms": 1787374207543,
      "bytes": 871,
-     "digest": "d194b15c2c4b487af7d1a6042c3a94f12fabc0f2bb314f7d136d959b4823a5a3",
+     "digest": "1f26df9cb4287a8b50ce0f44b3f518e8a1b279837ea4f7324e7dbe6d5886a4e3",
      "feeds": {
       "goes_xray": {
        "rows": 6,
-       "latest_time_tag": "2026-08-21T16:48:00Z"
+       "latest_time_tag": "2026-08-22T04:47:00Z"
       },
       "solar_wind_plasma": {
        "rows": 6,
-       "latest_time_tag": "2026-08-20T16:51:00"
+       "latest_time_tag": "2026-08-21T04:48:00"
       },
       "solar_wind_mag": {
        "rows": 6,
-       "latest_time_tag": "2026-08-20T16:51:00"
+       "latest_time_tag": "2026-08-21T04:48:00"
       }
      },
      "advanced": true
     }
    },
-   "output": "d6a090930a42d53e6d432617833928accfef024a1c9a195a3d0c9c947d4ffdc3f92d613369beec9cd123f7dedea1f9ae0e991b9fff2b1fd7a6cefe889f1de042",
-   "signature": "9fb3ebd9165000636949611f84630749ec2f501efc7f39668b1397aac28bcf3d6f6f48a2dc1a4c86cd825caf5ba709015ad29573683335c91023e5900e948905"
+   "output": "12b8c6235f775f03c68da5ce83a60991050c066f67d9dca867440bb38e3bb6463f8ea888dd62ae3d756a254b9168c8919e0298f0347c81c66fb503f4dc2a1289",
+   "signature": "eb3d0065188dac85c3234f5a3d1cbc2bc4509cabb9c6c8196f8e535967c16fdc37b568c3a680f3ca569af2dfb5d2077424936b3c362b3b76dd45f7609dbcb80b"
   },
   {
    "version": "beamline/pulse/v3",
    "round": 9,
-   "timestamp_ms": 1787331187521,
+   "timestamp_ms": 1787374223392,
    "period_seconds": 60,
-   "prev_output": "d6a090930a42d53e6d432617833928accfef024a1c9a195a3d0c9c947d4ffdc3f92d613369beec9cd123f7dedea1f9ae0e991b9fff2b1fd7a6cefe889f1de042",
-   "local_value": "5a269819d612881f0cd3b0a7aaaffb594e658419693b103bf904046af84dcc6a4672694327528eb2afdff2939255a451dded6b81a6553d2969e493721d77f5da",
-   "public_key": "00ac3492b4a97f05e6c07a0afbc65e0cc944a2639cef0b646dc8fd04c84a0cbf",
+   "prev_output": "12b8c6235f775f03c68da5ce83a60991050c066f67d9dca867440bb38e3bb6463f8ea888dd62ae3d756a254b9168c8919e0298f0347c81c66fb503f4dc2a1289",
+   "local_value": "905999bdb66e53d8435125c33566ad6405508191490911d3e41dc129849ced29bcb8d4fd2cb996dd0d192590f4241ebcb3bc5082966a63126ea51fac05cbe171",
+   "public_key": "bd3d2af9ff2ca0b51ced1e9e7fc35d5626b6132265d0d8bc16b40f466f438790",
    "provenance": {
     "local_os": {
-     "at_ms": 1787331186509,
+     "at_ms": 1787374220380,
      "bytes": 64,
-     "digest": "9eb4a99ca0291a66c5df6a2d750a1089855f822bc5296952ace7fcbf82333908",
+     "digest": "224b24e3ee30ad5ad2e5b93ca9a15269267fbe247e72d2d989f8de77f6034a40",
      "provider": "kernel getrandom(2)"
     },
     "anu_qrng": {
-     "at_ms": 1787331185612,
+     "at_ms": 1787374221413,
      "bytes": 1530,
-     "digest": "031acbed1ff0a21a00f35c6b877dec6a42d2406d310bc6a3bb4036c56b199d0d",
+     "digest": "ed2369886bf0af25553767264eb89d36b4a26b867384bef93109efeef0ad64d0",
      "provider": "local_archive",
      "blocks": 2,
      "chars": 2048,
      "source_entropy_bits": 12241,
-     "remaining_blocks": 3866
+     "remaining_blocks": 3740
     },
     "astro": {
-     "at_ms": 1787331153710,
+     "at_ms": 1787374207543,
      "bytes": 871,
-     "digest": "d194b15c2c4b487af7d1a6042c3a94f12fabc0f2bb314f7d136d959b4823a5a3",
+     "digest": "1f26df9cb4287a8b50ce0f44b3f518e8a1b279837ea4f7324e7dbe6d5886a4e3",
      "feeds": {
       "goes_xray": {
        "rows": 6,
-       "latest_time_tag": "2026-08-21T16:48:00Z"
+       "latest_time_tag": "2026-08-22T04:47:00Z"
       },
       "solar_wind_plasma": {
        "rows": 6,
-       "latest_time_tag": "2026-08-20T16:51:00"
+       "latest_time_tag": "2026-08-21T04:48:00"
       },
       "solar_wind_mag": {
        "rows": 6,
-       "latest_time_tag": "2026-08-20T16:51:00"
+       "latest_time_tag": "2026-08-21T04:48:00"
       }
      },
      "advanced": true
     }
    },
-   "output": "eebde5fa840f1036a697a9f8f721277834b0fe25c1aa5b96ea339bc71425777ba575a7403155b9788613c12f7a7eafd8af4fe87ef8aa5c35abec3082ae4d26b1",
-   "signature": "0bb7fa0347d381e66fa4d00a8ea9459c0361ee3a43324bfea33178b71e454a1ecbd0eb9b1a6469a93604f9b1cd83d48853ca8149625dbff2064e8350c636f30e"
+   "output": "6037066e958e0d5f4e628f1a81d49b73be3552edbc0736d665a683a040e9f9b016767952701d680f2b631353cd9cf36aac40a4e027e05d7cfce4b7118e319856",
+   "signature": "4a045f18d3a3c66fef712aa867a51b21258107af898cbe456d748894abdc0f6f887466b8ed241a374c2e1845d0e51d0048fb4ad3baf88788ff1150477f9c3f0a"
   },
   {
    "version": "beamline/pulse/v3",
    "round": 10,
-   "timestamp_ms": 1787331191525,
+   "timestamp_ms": 1787374225396,
    "period_seconds": 60,
-   "prev_output": "eebde5fa840f1036a697a9f8f721277834b0fe25c1aa5b96ea339bc71425777ba575a7403155b9788613c12f7a7eafd8af4fe87ef8aa5c35abec3082ae4d26b1",
-   "local_value": "337e63751afb37b9eb6d9a55c1a89815ca6caa18c8eea4d2e1fea2e5698f9cedbf255159519863d6be60e57e266361c8d4fa831e20758c4d87564a530f59e0e9",
-   "public_key": "00ac3492b4a97f05e6c07a0afbc65e0cc944a2639cef0b646dc8fd04c84a0cbf",
+   "prev_output": "6037066e958e0d5f4e628f1a81d49b73be3552edbc0736d665a683a040e9f9b016767952701d680f2b631353cd9cf36aac40a4e027e05d7cfce4b7118e319856",
+   "local_value": "a4a79002203c189fe4dc6c90ac559f01247f26f15cff885d9908d3ea18adaf5a635286109dfad036438e21291fbf800a4410e32c71985e577201c057e81bc6cb",
+   "public_key": "bd3d2af9ff2ca0b51ced1e9e7fc35d5626b6132265d0d8bc16b40f466f438790",
    "provenance": {
     "local_os": {
-     "at_ms": 1787331191510,
+     "at_ms": 1787374225382,
      "bytes": 64,
-     "digest": "783f75e245853b2de37344fe6b70e17c852bb9887f44502dfb565e355feabb4e",
+     "digest": "1e64ad227da7bc5c22e96301d053393ddbb08f9c17c8c87c58cd01dcc19ed71b",
      "provider": "kernel getrandom(2)"
     },
     "anu_qrng": {
-     "at_ms": 1787331189624,
+     "at_ms": 1787374223418,
      "bytes": 1530,
-     "digest": "d2c0e587ceb4e12f84ced5ca97b5eb8448544e5e88d9ff5ccf333d942998ad0c",
+     "digest": "cbdb7bb5674c76b24112122ea412de15f35837278d4dd87257967f7c78706292",
      "provider": "local_archive",
      "blocks": 2,
      "chars": 2048,
      "source_entropy_bits": 12241,
-     "remaining_blocks": 3862
+     "remaining_blocks": 3738
     },
     "astro": {
-     "at_ms": 1787331153710,
+     "at_ms": 1787374207543,
      "bytes": 871,
-     "digest": "d194b15c2c4b487af7d1a6042c3a94f12fabc0f2bb314f7d136d959b4823a5a3",
+     "digest": "1f26df9cb4287a8b50ce0f44b3f518e8a1b279837ea4f7324e7dbe6d5886a4e3",
      "feeds": {
       "goes_xray": {
        "rows": 6,
-       "latest_time_tag": "2026-08-21T16:48:00Z"
+       "latest_time_tag": "2026-08-22T04:47:00Z"
       },
       "solar_wind_plasma": {
        "rows": 6,
-       "latest_time_tag": "2026-08-20T16:51:00"
+       "latest_time_tag": "2026-08-21T04:48:00"
       },
       "solar_wind_mag": {
        "rows": 6,
-       "latest_time_tag": "2026-08-20T16:51:00"
+       "latest_time_tag": "2026-08-21T04:48:00"
       }
      },
      "advanced": true
     }
    },
-   "output": "2526929b3f183f68b3533338dc3e5b92bf27694dd0046ae6521a96a5236d778ddd41d262d7b804ba2e669aa409d737133e7845669e247b313cf16adde2a25cdb",
-   "signature": "37595be07f8308ec2ec34129f6ecd88a7a9365d2c5dccd93889513188be4b7462412ce41f17a6dcfe868191b7a0ee9db8a877cae63239d82abb7d1bb24793507"
+   "output": "825a7dbb33abf32826f80e3494b9824ca4a5ef391f6b96f8a867c4348ceaca6577f3a04dec39b524d3631e4678974ee3c58f6f6effc039dbcb2bad070b4fbe63",
+   "signature": "97fb16513bc5b10978edeb10d0b8fd199cb77b44e77ba966bce35f6b0b3ab5b37e5932387647c58fd8723d70948e58c9b6d915d7cd16ac583d677b1f4a189206"
   }
  ],
  "commitment": {
-  "version": "beamline/commitment/v1",
-  "commit_id": "6a924f2499d8eff333bdb30d594e3a0b",
+  "version": "beamline/commitment/v2",
+  "commit_id": "08774a54c1d9df05e339e036f21700ed",
   "tag": "spring-giveaway-2026",
   "target_round": 10,
-  "created_at_ms": 1787331191524,
+  "created_at_ms": 1787374225394,
   "created_after_round": 9,
-  "public_key": "00ac3492b4a97f05e6c07a0afbc65e0cc944a2639cef0b646dc8fd04c84a0cbf",
-  "signature": "41e6bf2cf87c676758e8974c8c54a5ace32e72ffd24b4a5b04beb856b93b3902c97db5694e1810b3e8134ea161ecf650810cd04c85284291efcf416a69571f07"
+  "committer": "demo",
+  "sequence": 1,
+  "draw": {
+   "kind": "sample",
+   "count": 3,
+   "min": 1,
+   "max": 4820,
+   "items_digest": null
+  },
+  "public_key": "bd3d2af9ff2ca0b51ced1e9e7fc35d5626b6132265d0d8bc16b40f466f438790",
+  "signature": "d8ad3b227c7a4041da63fc084aa5190d8a6b3c867bf9c5582bb8485e91ad7557271a853ac1ea825002f57d7679125350fa0088a2b9dd25c5d3ad0e3def14530b"
  }
 }
