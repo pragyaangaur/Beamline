@@ -292,6 +292,7 @@ class TestBeacon:
 
         b1 = Beacon(db, pool, 1, k1)
         pulses = [b1.emit(), b1.emit()]
+        endorsement = b1.endorse_rotation(k2, effective_round=3)
         b2 = Beacon(db, pool, 1, k2)          # operator rotates
         pulses.append(b2.emit())
 
@@ -299,7 +300,12 @@ class TestBeacon:
         # indistinguishable from someone substituting their own archive.
         assert not v.check_chain(pulses, b1.public_key_hex)[0]
 
-        ok, msg = v.check_chain(pulses, trusted_keys=[b1.public_key_hex, b2.public_key_hex])
+        # Trusting both is still not enough on its own -- the outgoing key has to
+        # have said so.
+        both = [b1.public_key_hex, b2.public_key_hex]
+        assert not v.check_chain(pulses, trusted_keys=both)[0]
+
+        ok, msg = v.check_chain(pulses, trusted_keys=both, rotations=[endorsement])
         assert ok, msg
         assert "signing key changed at round(s) [3]" in msg
 
