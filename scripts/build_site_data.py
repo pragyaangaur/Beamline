@@ -34,6 +34,10 @@ sys.path.insert(0, str(ROOT))
 #: emitted, so the page can show the one property a pulse cannot demonstrate about
 #: itself: that the draw was named while the outcome did not yet exist.
 DEMO_TAG = "spring-giveaway-2026"
+#: The shape of that draw, matching the page's default form values. Committed
+#: alongside the name, because 3 winners from 4,820 and 1 from 100 are different
+#: draws and a receipt that fixed only the name would cover both.
+DEMO_DRAW = {"kind": "sample", "count": 3, "minimum": 1, "maximum": 4820}
 
 
 async def build(rounds: int, spacing: float, period: int) -> dict:
@@ -69,7 +73,8 @@ async def build(rounds: int, spacing: float, period: int) -> dict:
                 # receipt's created_after_round proves the deciding pulse did not
                 # exist yet. Committing after the emit would produce a receipt that
                 # verifies and means nothing, which is the failure mode worth showing.
-                commitment = svc.beacon.commit(DEMO_TAG, target_round=rounds)
+                commitment = svc.beacon.commit(DEMO_TAG, target_round=rounds,
+                                               key_id="demo", **DEMO_DRAW)
             svc.beacon.emit()
             print(f"  round {i + 1}/{rounds}", file=sys.stderr)
             if i < rounds - 1:
