@@ -265,13 +265,70 @@ def verify_pulse(pulse: dict, prev_output: str | None = None,
     return True, "ok"
 
 
-COMMITMENT_VERSION = "beamline/commitment/v1"
+COMMITMENT_VERSION = "beamline/commitment/v2"
 COMMITMENT_BODY_FIELDS = ("version", "commit_id", "tag", "target_round",
-                          "created_at_ms", "created_after_round", "public_key")
+                          "created_at_ms", "created_after_round", "committer",
+                          "sequence", "draw", "public_key")
+DRAW_SPEC_FIELDS = ("kind", "count", "min", "max", "items_digest")
+
+
+def items_digest(items) -> str | None:
+    """A stable digest of the population a draw runs over.
+
+    Committing to the entry list matters as much as committing to the name. A runner
+    who names the draw honestly and then adds or removes entrants before deriving has
+    changed who can win without touching the tag, the round, or any signature.
+    """
+    if items is None:
+        return None
+    return hashlib.sha256(b"beamline/items/v1" + encode(list(items))).hexdigest()
+
+
+def draw_spec(kind: str, count: int, minimum: int, maximum: int, items=None) -> dict:
+    """The shape of a draw, as committed.
+
+    The tag alone is not the draw. One commitment to "giveaway-7" covers a draw of
+    one winner from 100 and a draw of one from 5000, and those name different people:
+
+        count=1 min=1 max=100   -> [26]
+        count=1 min=1 max=5000  -> [950]
+        count=3 min=1 max=100   -> [26, 4, 54]
+
+    Every one of those reproduces from the same pulse and the same committed tag, so a
+    verifier that checks only the tag accepts whichever the runner liked best. The
+    parameters are part of what has to be fixed in advance.
+    """
+    return {
+        "kind": kind,
+        "count": int(count),
+        "min": int(minimum),
+        "max": int(maximum),
+        "items_digest": items_digest(items),
+    }
 
 
 def commitment_body(receipt: dict) -> dict:
     return {k: receipt.get(k) for k in COMMITMENT_BODY_FIELDS}
+
+
+def _check_draw_spec(spec) -> str | None:
+    if not isinstance(spec, dict):
+        return "draw specification must be an object"
+    if set(spec) != set(DRAW_SPEC_FIELDS):
+        return f"draw specification must have exactly the fields {sorted(DRAW_SPEC_FIELDS)}"
+    if not isinstance(spec["kind"], str) or not spec["kind"]:
+        return "draw kind must be a non-empty string"
+    for name in ("count", "min", "max"):
+        if not isinstance(spec[name], int) or isinstance(spec[name], bool):
+            return f"draw {name} must be an integer"
+    if spec["min"] > spec["max"]:
+        return "draw min must not exceed max"
+    if spec["count"] < 1:
+        return "draw count must be at least 1"
+    digest = spec["items_digest"]
+    if digest is not None and (not isinstance(digest, str) or len(digest) != 64):
+        return "draw items_digest must be null or a 64-character hex digest"
+    return None
 
 
 def verify_commitment(receipt: dict, public_key_hex: str | None = None, *,
@@ -279,22 +336,33 @@ def verify_commitment(receipt: dict, public_key_hex: str | None = None, *,
     """Check a commitment receipt: signed by whom, and made before what.
 
     The receipt is the operator attesting "at this moment, with the chain standing at
-    round N, somebody named this exact tag against round M". It is only worth anything
-    if M > N -- otherwise the pulse that decides the draw already existed when the draw
-    was named, and the runner could have chosen either.
+    round N, this committer named this exact draw against round M". It is only worth
+    anything if M > N -- otherwise the pulse that decides the draw already existed when
+    the draw was named, and the runner could have chosen either.
+
+    Note what this function does *not* answer: whether this was the only draw the
+    committer registered against that round. `sequence` carries the count, and
+    `beamline_client.verify.check_draw` is where it is acted on.
     """
     anchor = _trust_anchor(public_key_hex, trusted_keys)
     if anchor is None and not allow_unsigned:
         return False, "no trust anchor: pass the signing key you expect"
     if receipt.get("version") != COMMITMENT_VERSION:
         return False, f"unexpected commitment version {receipt.get('version')!r}"
-    for name in ("target_round", "created_at_ms", "created_after_round"):
+    for name in ("target_round", "created_at_ms", "created_after_round", "sequence"):
         if not isinstance(receipt.get(name), int) or isinstance(receipt.get(name), bool):
             return False, f"{name} must be an integer"
+    if receipt["sequence"] < 1:
+        return False, "sequence must be at least 1"
     if not isinstance(receipt.get("tag"), str) or not receipt["tag"]:
         return False, "tag must be a non-empty string"
     if not isinstance(receipt.get("commit_id"), str) or not receipt["commit_id"]:
         return False, "commit_id must be a non-empty string"
+    if not isinstance(receipt.get("committer"), str):
+        return False, "committer must be a string"
+    problem = _check_draw_spec(receipt.get("draw"))
+    if problem:
+        return False, problem
     if receipt["target_round"] <= receipt["created_after_round"]:
         return False, (f"commitment names round {receipt['target_round']} but the chain "
                        f"had already reached round {receipt['created_after_round']}; "
@@ -323,6 +391,76 @@ def verify_commitment(receipt: dict, public_key_hex: str | None = None, *,
     return True, "ok"
 
 
+# --- key rotation ----------------------------------------------------------
+ROTATION_VERSION = "beamline/rotation/v1"
+ROTATION_BODY_FIELDS = ("version", "from_public_key", "to_public_key",
+                        "effective_round", "created_at_ms")
+
+
+def rotation_body(record: dict) -> dict:
+    return {k: record.get(k) for k in ROTATION_BODY_FIELDS}
+
+
+def verify_rotation(record: dict, *, expect_from: str | None = None,
+                    expect_to: str | None = None,
+                    expect_round: int | None = None) -> tuple[bool, str]:
+    """Check that the retiring key endorsed its successor, and the successor exists.
+
+    Both signatures are required and they answer different questions. `signature_from`
+    is the endorsement: the key being retired says this successor is legitimate, which
+    is the only thing that distinguishes a rotation from someone else's archive.
+    `signature_to` is proof of possession: without it an operator -- or anyone who
+    compromised the old key once -- could rotate towards a public key nobody holds,
+    stranding the chain on a key that can never sign again.
+    """
+    if record.get("version") != ROTATION_VERSION:
+        return False, f"unexpected rotation version {record.get('version')!r}"
+    for name in ("from_public_key", "to_public_key"):
+        value = record.get(name)
+        if not isinstance(value, str) or len(value) != 64:
+            return False, f"{name} must be 64 hex characters"
+        try:
+            bytes.fromhex(value)
+        except ValueError:
+            return False, f"{name} is not valid hex"
+    if record["from_public_key"] == record["to_public_key"]:
+        return False, "a rotation must change the key"
+    for name in ("effective_round", "created_at_ms"):
+        if not isinstance(record.get(name), int) or isinstance(record.get(name), bool):
+            return False, f"{name} must be an integer"
+    if record["effective_round"] < 1:
+        return False, "effective_round must be at least 1"
+
+    ok, why = is_canonical(rotation_body(record))
+    if not ok:
+        return False, f"rotation body is not canonically encodable: {why}"
+    if not HAVE_ED25519:
+        return False, "ed25519 support is not installed"
+
+    body = encode(rotation_body(record))
+    for field, key in (("signature_from", record["from_public_key"]),
+                       ("signature_to", record["to_public_key"])):
+        sig = record.get(field)
+        if not isinstance(sig, str) or len(sig) != 128:
+            return False, f"{field} must be 128 hex characters"
+        try:
+            Ed25519PublicKey.from_public_bytes(bytes.fromhex(key)).verify(
+                bytes.fromhex(sig), body)
+        except Exception:
+            return False, f"{field} is not a valid signature by {key[:16]}..."
+
+    if expect_from is not None and record["from_public_key"] != expect_from:
+        return False, (f"rotation retires {record['from_public_key'][:16]}... but the "
+                       f"chain was using {expect_from[:16]}...")
+    if expect_to is not None and record["to_public_key"] != expect_to:
+        return False, (f"rotation appoints {record['to_public_key'][:16]}... but the "
+                       f"chain switched to {expect_to[:16]}...")
+    if expect_round is not None and record["effective_round"] != expect_round:
+        return False, (f"rotation takes effect at round {record['effective_round']}, "
+                       f"not round {expect_round}")
+    return True, "ok"
+
+
 #: How far a pulse's timestamp may sit from its scheduled slot before a strict
 #: verifier calls the chain back-dated. Wide enough for clock skew and a slow emit.
 MAX_TIMESTAMP_SKEW_MS = 5 * 60 * 1000
@@ -330,7 +468,8 @@ MAX_TIMESTAMP_SKEW_MS = 5 * 60 * 1000
 
 def verify_chain(pulses: list[dict], public_key_hex: str | None = None, *,
                  trusted_keys=None, allow_unsigned: bool = False,
-                 enforce_period: bool = False) -> tuple[bool, str]:
+                 enforce_period: bool = False, rotations=None,
+                 allow_unendorsed_rotation: bool = False) -> tuple[bool, str]:
     """Verify a consecutive run of pulses. Any break invalidates everything after it.
 
     Beyond per-pulse verification this checks the properties that only exist across
@@ -343,13 +482,21 @@ def verify_chain(pulses: list[dict], public_key_hex: str | None = None, *,
     within `MAX_TIMESTAMP_SKEW_MS`. It is off by default because a genuine chain can
     contain honest gaps -- a restart, a deploy -- and a verifier should not call those
     forgeries. Turn it on when auditing a run that is supposed to have been continuous.
+
+    A change of signing key must be endorsed by the key being retired. Naming both
+    keys in `trusted_keys` is not enough on its own: that only says you would accept
+    either, and an attacker who talks you into trusting their key gets a substituted
+    archive accepted with nothing in the chain contradicting it. Pass the operator's
+    published `rotations` so the switch can be checked against an endorsement signed
+    by the outgoing key. `allow_unendorsed_rotation=True` exists for archives that
+    predate the mechanism and says what it is doing in the result.
     """
     if not pulses:
         return False, "empty chain"
 
     ordered = sorted(pulses, key=lambda p: p["round"])
     seen_keys: list[str] = []
-    rotations: list[int] = []
+    changes: list[int] = []
 
     for i, p in enumerate(ordered):
         prev = ordered[i - 1] if i else None
@@ -382,17 +529,42 @@ def verify_chain(pulses: list[dict], public_key_hex: str | None = None, *,
                                    f"{prev['round']}, not the declared {want}ms")
         key = p.get("public_key")
         if seen_keys and key != seen_keys[-1]:
-            rotations.append(p["round"])
+            ok, why = _endorsed(rotations, seen_keys[-1], key, p["round"],
+                                allow_unendorsed_rotation)
+            if not ok:
+                return False, f"round {p['round']}: {why}"
+            changes.append(p["round"])
         seen_keys.append(key)
 
     msg = (f"verified {len(ordered)} pulses from round {ordered[0]['round']} "
            f"to {ordered[-1]['round']}")
-    if rotations:
-        # Every key here was already checked against the trust anchor, so this is a
-        # rotation the verifier accepted -- but never a silent one, because an
-        # unannounced rotation is what an archive substitution looks like.
-        msg += f"; signing key changed at round(s) {rotations}"
+    if changes:
+        # Never silent, even when endorsed: a reader deciding whether to trust this
+        # archive needs to know the key changed under it.
+        msg += (f"; signing key changed at round(s) {changes}"
+                + (" WITHOUT ENDORSEMENT" if allow_unendorsed_rotation else
+                   ", each endorsed by the key it retired"))
     return True, msg
+
+
+def _endorsed(rotations, from_key, to_key, round_no: int,
+              allow_unendorsed: bool) -> tuple[bool, str]:
+    """Is this key change backed by a record the outgoing key signed?"""
+    if allow_unendorsed:
+        return True, "ok"
+    if not rotations:
+        return False, (f"the signing key changes here and no rotation records were "
+                       f"supplied. Trusting both keys says only that you would accept "
+                       f"either; it does not show {str(from_key)[:16]}... ever handed "
+                       f"over to {str(to_key)[:16]}...")
+    for record in rotations:
+        if record.get("effective_round") != round_no:
+            continue
+        ok, why = verify_rotation(record, expect_from=from_key, expect_to=to_key,
+                                  expect_round=round_no)
+        return (True, "ok") if ok else (False, f"rotation record is not usable: {why}")
+    return False, (f"the signing key changes here but no rotation record takes effect "
+                   f"at round {round_no}")
 
 
 class Beacon:
@@ -461,12 +633,20 @@ class Beacon:
 
     # --- commitments ------------------------------------------------------
     def commit(self, tag: str, target_round: int | None = None, *,
-               rounds_ahead: int = 1, key_id: str = "") -> dict:
+               rounds_ahead: int = 1, key_id: str = "",
+               kind: str = "integers", count: int = 1, minimum: int = 0,
+               maximum: int = 100, items=None) -> dict:
         """Record a draw against a round that has not happened yet.
 
         Refuses to commit to an already-emitted round. That refusal is the entire
         mechanism: it is what makes a commitment evidence rather than a note, because
         a receipt can only ever exist for a draw named before its deciding pulse.
+
+        The receipt fixes the draw's *shape* as well as its name -- kind, count,
+        bounds, and a digest of the entry list -- because a tag on its own does not
+        determine a winner. It also carries `sequence`, this committer's running count
+        of draws registered against this round, so registering twenty and publishing
+        the flattering one leaves a signed trace.
         """
         with self._lock:
             latest = self._store.latest_pulse()
@@ -488,6 +668,9 @@ class Beacon:
                 "target_round": target_round,
                 "created_at_ms": int(time.time() * 1000),
                 "created_after_round": current,
+                "committer": key_id,
+                "sequence": self._store.count_commitments_by(key_id, target_round) + 1,
+                "draw": draw_spec(kind, count, minimum, maximum, items),
                 "public_key": self.public_key_hex,
             }
             if self._signer is not None:
@@ -498,6 +681,34 @@ class Beacon:
 
     def commitment(self, commit_id: str) -> dict | None:
         return self._store.get_commitment(commit_id)
+
+    # --- key rotation -----------------------------------------------------
+    def endorse_rotation(self, new_signing_key_hex: str, effective_round: int) -> dict:
+        """Sign over authority from the current key to its successor.
+
+        Called while the *old* key is still loaded, which is the only moment the
+        endorsement can be produced. An operator who rotates first and thinks about
+        provenance afterwards has already lost the ability to prove the change was
+        theirs.
+        """
+        if self._signer is None:
+            raise RuntimeError("cannot endorse a rotation: this beacon has no signing key")
+        new_signer = Ed25519PrivateKey.from_private_bytes(bytes.fromhex(new_signing_key_hex))
+        record = {
+            "version": ROTATION_VERSION,
+            "from_public_key": self.public_key_hex,
+            "to_public_key": new_signer.public_key().public_bytes_raw().hex(),
+            "effective_round": effective_round,
+            "created_at_ms": int(time.time() * 1000),
+        }
+        body = encode(rotation_body(record))
+        record["signature_from"] = self._signer.sign(body).hex()
+        record["signature_to"] = new_signer.sign(body).hex()
+        self._store.insert_rotation(record)
+        return record
+
+    def rotations(self) -> list[dict]:
+        return self._store.rotations()
 
     def derive(self, round_no: int, tag: str, n: int) -> bytes:
         """Deterministically derive `n` bytes from a published pulse and a caller tag.
