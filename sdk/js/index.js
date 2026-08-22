@@ -14,7 +14,9 @@
 
 const DEFAULT_BASE = 'https://api.beamline.dev';
 const VERSION_TAG = 'beamline/pulse/v3';
-const COMMITMENT_VERSION = 'beamline/commitment/v1';
+const COMMITMENT_VERSION = 'beamline/commitment/v2';
+const ROTATION_VERSION = 'beamline/rotation/v1';
+const DRAW_SPEC_FIELDS = ['kind', 'count', 'min', 'max', 'items_digest'];
 
 const enc = new TextEncoder();
 
@@ -194,8 +196,48 @@ function canonicalCommitmentBody(c) {
     target_round: c.target_round,
     created_at_ms: c.created_at_ms,
     created_after_round: c.created_after_round,
+    committer: c.committer ?? null,
+    sequence: c.sequence,
+    draw: c.draw ?? null,
     public_key: c.public_key ?? null,
   }));
+}
+
+function canonicalRotationBody(r) {
+  return enc.encode(canonicalEncode({
+    version: r.version,
+    from_public_key: r.from_public_key,
+    to_public_key: r.to_public_key,
+    effective_round: r.effective_round,
+    created_at_ms: r.created_at_ms,
+  }));
+}
+
+/** The digest a commitment pins an entry list to. */
+export async function itemsDigest(items) {
+  if (items === null || items === undefined) return null;
+  const bytes = enc.encode(canonicalEncode([...items]));
+  const salted = concat(enc.encode('beamline/items/v1'), bytes);
+  return bytesToHex(new Uint8Array(await crypto.subtle.digest('SHA-256', salted)));
+}
+
+function drawSpecProblem(spec) {
+  if (!spec || typeof spec !== 'object') return 'draw specification must be an object';
+  const keys = Object.keys(spec).sort();
+  if (keys.join(',') !== [...DRAW_SPEC_FIELDS].sort().join(',')) {
+    return `draw specification must have exactly the fields ${[...DRAW_SPEC_FIELDS].sort()}`;
+  }
+  if (typeof spec.kind !== 'string' || !spec.kind) return 'draw kind must be a non-empty string';
+  for (const f of ['count', 'min', 'max']) {
+    if (!Number.isSafeInteger(spec[f])) return `draw ${f} must be an integer`;
+  }
+  if (spec.min > spec.max) return 'draw min must not exceed max';
+  if (spec.count < 1) return 'draw count must be at least 1';
+  if (spec.items_digest !== null
+      && (typeof spec.items_digest !== 'string' || spec.items_digest.length !== 64)) {
+    return 'draw items_digest must be null or a 64-character hex digest';
+  }
+  return null;
 }
 
 const HEX_LENGTHS = {
@@ -304,21 +346,30 @@ export async function checkPulse(pulse, publicKeyHex = null, prev = null,
 }
 
 export async function checkChain(pulses, publicKeyHex = null,
-                                 { trustedKeys = null, allowUnsigned = false } = {}) {
+                                 { trustedKeys = null, allowUnsigned = false,
+                                   rotations = null, allowUnendorsedRotation = false } = {}) {
   if (!pulses.length) return [false, 'empty chain'];
   const ordered = [...pulses].sort((a, b) => a.round - b.round);
-  const rotations = [];
+  const changes = [];
   for (let i = 0; i < ordered.length; i++) {
     const [ok, why] = await checkPulse(ordered[i], publicKeyHex, i ? ordered[i - 1] : null,
                                        { trustedKeys, allowUnsigned });
     if (!ok) return [false, `round ${ordered[i].round}: ${why}`];
-    if (i && ordered[i].public_key !== ordered[i - 1].public_key) rotations.push(ordered[i].round);
+    if (i && ordered[i].public_key !== ordered[i - 1].public_key) {
+      const [endorsedOk, endorsedWhy] = await endorsed(
+        rotations, ordered[i - 1].public_key, ordered[i].public_key,
+        ordered[i].round, allowUnendorsedRotation);
+      if (!endorsedOk) return [false, `round ${ordered[i].round}: ${endorsedWhy}`];
+      changes.push(ordered[i].round);
+    }
   }
   let msg = `verified ${ordered.length} pulses`;
-  // Every key here already matched the trust anchor, so this is a rotation you
-  // accepted -- but never a silent one: an unannounced rotation is what an archive
-  // substitution looks like.
-  if (rotations.length) msg += `; signing key changed at round(s) ${rotations.join(', ')}`;
+  // Never silent, even when endorsed: a reader deciding whether to trust this archive
+  // needs to know the key changed under it.
+  if (changes.length) {
+    msg += `; signing key changed at round(s) ${changes.join(', ')}`
+      + (allowUnendorsedRotation ? ' WITHOUT ENDORSEMENT' : ', each endorsed by the key it retired');
+  }
   return [true, msg];
 }
 
@@ -335,10 +386,14 @@ export async function checkCommitment(receipt, publicKeyHex = null,
   if (!anchor && !allowUnsigned) return [false, 'no trust anchor: pass the signing key you expect'];
   if (!receipt || typeof receipt !== 'object') return [false, 'commitment is not an object'];
   if (receipt.version !== COMMITMENT_VERSION) return [false, `unexpected commitment version ${receipt.version}`];
-  for (const f of ['target_round', 'created_at_ms', 'created_after_round']) {
+  for (const f of ['target_round', 'created_at_ms', 'created_after_round', 'sequence']) {
     if (!Number.isSafeInteger(receipt[f])) return [false, `${f} must be an integer`];
   }
+  if (receipt.sequence < 1) return [false, 'sequence must be at least 1'];
   if (typeof receipt.tag !== 'string' || !receipt.tag) return [false, 'tag must be a non-empty string'];
+  if (typeof receipt.committer !== 'string') return [false, 'committer must be a string'];
+  const specProblem = drawSpecProblem(receipt.draw);
+  if (specProblem) return [false, specProblem];
   if (receipt.target_round <= receipt.created_after_round) {
     return [false, `commitment names round ${receipt.target_round} but the chain had already `
       + `reached round ${receipt.created_after_round}; the deciding pulse existed before the `
@@ -362,15 +417,121 @@ export async function checkCommitment(receipt, publicKeyHex = null,
 }
 
 /**
+ * Check that the retiring key endorsed its successor, and that the successor exists.
+ *
+ * Two signatures answering two questions. The outgoing key's is the endorsement --
+ * the only thing separating a rotation from somebody else's archive. The incoming
+ * key's is proof of possession, so authority cannot be handed to a key nobody holds.
+ */
+export async function checkRotation(record, { expectFrom = null, expectTo = null,
+                                              expectRound = null } = {}) {
+  if (!record || typeof record !== 'object') return [false, 'rotation is not an object'];
+  if (record.version !== ROTATION_VERSION) return [false, `unexpected rotation version ${record.version}`];
+  for (const f of ['from_public_key', 'to_public_key']) {
+    if (typeof record[f] !== 'string' || !/^[0-9a-f]{64}$/.test(record[f])) {
+      return [false, `${f} must be 64 hex characters`];
+    }
+  }
+  if (record.from_public_key === record.to_public_key) return [false, 'a rotation must change the key'];
+  for (const f of ['effective_round', 'created_at_ms']) {
+    if (!Number.isSafeInteger(record[f])) return [false, `${f} must be an integer`];
+  }
+  if (record.effective_round < 1) return [false, 'effective_round must be at least 1'];
+
+  const body = canonicalRotationBody(record);
+  for (const [field, key] of [['signature_from', record.from_public_key],
+                              ['signature_to', record.to_public_key]]) {
+    if (typeof record[field] !== 'string' || record[field].length !== 128) {
+      return [false, `${field} must be 128 hex characters`];
+    }
+    try {
+      if (!await ed25519Verify(key, record[field], body)) {
+        return [false, `${field} is not a valid signature by ${key.slice(0, 16)}...`];
+      }
+    } catch (e) {
+      return [false, `${field} could not be checked here (${e.message}); this is not a pass`];
+    }
+  }
+  if (expectFrom !== null && record.from_public_key !== expectFrom) {
+    return [false, `rotation retires ${record.from_public_key.slice(0, 16)}... but the chain `
+      + `was using ${expectFrom.slice(0, 16)}...`];
+  }
+  if (expectTo !== null && record.to_public_key !== expectTo) {
+    return [false, `rotation appoints ${record.to_public_key.slice(0, 16)}... but the chain `
+      + `switched to ${expectTo.slice(0, 16)}...`];
+  }
+  if (expectRound !== null && record.effective_round !== expectRound) {
+    return [false, `rotation takes effect at round ${record.effective_round}, not ${expectRound}`];
+  }
+  return [true, 'ok'];
+}
+
+async function endorsed(rotations, fromKey, toKey, roundNo, allowUnendorsed) {
+  if (allowUnendorsed) return [true, 'ok'];
+  if (!rotations || !rotations.length) {
+    return [false, 'the signing key changes here and no rotation records were supplied. '
+      + 'Trusting both keys says only that you would accept either; it does not show '
+      + `${String(fromKey).slice(0, 16)}... ever handed over to ${String(toKey).slice(0, 16)}...`];
+  }
+  for (const record of rotations) {
+    if (record.effective_round !== roundNo) continue;
+    const [ok, why] = await checkRotation(record, { expectFrom: fromKey, expectTo: toKey,
+                                                    expectRound: roundNo });
+    return ok ? [true, 'ok'] : [false, `rotation record is not usable: ${why}`];
+  }
+  return [false, `the signing key changes here but no rotation record takes effect at round ${roundNo}`];
+}
+
+/**
+ * Was this the committer's only draw against this round?
+ *
+ * Committing twenty draws in advance and publishing the one that wins is grinding
+ * that survives every other check: each receipt is honest, early and signed. The
+ * public commitment list is the authoritative answer; the receipt's own sequence
+ * number is the weaker fallback, since a grinder whose first attempt wins holds a
+ * receipt reading sequence 1.
+ */
+function checkExclusivity(commitment, siblings, allowMultiple) {
+  if (siblings) {
+    const mine = siblings.filter((c) => c.committer === commitment.committer
+      && c.target_round === commitment.target_round);
+    if (!mine.some((c) => c.commit_id === commitment.commit_id)) {
+      return [false, 'this commitment is missing from the published list for the round, '
+        + 'so the list cannot be the whole story'];
+    }
+    if (mine.length > 1 && !allowMultiple) {
+      const others = mine.filter((c) => c.commit_id !== commitment.commit_id)
+        .map((c) => c.tag).sort();
+      return [false, `the committer registered ${mine.length} draws against round `
+        + `${commitment.target_round} and published this one. The others were `
+        + `${JSON.stringify(others)}. Each is individually valid, which is the point: `
+        + 'picking among them after the pulse is grinding.'];
+    }
+    return [true, mine.length === 1
+      ? "it was the committer's only draw against that round"
+      : `the committer registered ${mine.length} draws against that round and you chose to accept that`];
+  }
+  if (commitment.sequence > 1 && !allowMultiple) {
+    return [false, `this receipt is the committer's draw number ${commitment.sequence} `
+      + `against round ${commitment.target_round}; the earlier ones were not published, `
+      + 'and picking among them after the pulse is grinding'];
+  }
+  return [true, "its receipt is the committer's first for that round, though without the "
+    + "published commitment list that is the receipt's own word"];
+}
+
+/**
  * The whole question in one call: was this draw fair?
  *
- * Four things have to hold, and checking three of them is how people convince
+ * Five things have to hold, and checking four of them is how people convince
  * themselves of something untrue -- the pulse is authentic, the receipt is authentic
- * and predates it, the receipt names this exact draw, and the result reproduces.
+ * and predates it, the receipt names this draw's tag *and shape*, this was the
+ * committer's only draw against the round, and the result reproduces.
  */
 export async function checkDraw(pulse, commitment, result, publicKeyHex,
                                 { kind = 'integers', items = null, count = 1,
-                                  min = 0, max = 100, prev = null, trustedKeys = null } = {}) {
+                                  min = 0, max = 100, prev = null, trustedKeys = null,
+                                  siblings = null, allowMultipleCommitments = false } = {}) {
   const [pulseOk, pulseWhy] = await checkPulse(pulse, publicKeyHex, prev, { trustedKeys });
   if (!pulseOk) return [false, `pulse: ${pulseWhy}`];
 
@@ -382,18 +543,35 @@ export async function checkDraw(pulse, commitment, result, publicKeyHex,
       + `drawn from round ${pulse.round}`];
   }
 
+  const spec = commitment.draw;
+  const asked = { kind, count, min, max, items_digest: await itemsDigest(items) };
+  const differences = DRAW_SPEC_FIELDS
+    .filter((k) => JSON.stringify(spec[k]) !== JSON.stringify(asked[k]))
+    .map((k) => `${k}=${JSON.stringify(spec[k])} was committed, ${JSON.stringify(asked[k])} was used`);
+  if (differences.length) {
+    return [false, `the draw does not match what was committed: ${differences.join('; ')}`];
+  }
+
+  const [exclusive, exclusivity] = checkExclusivity(commitment, siblings, allowMultipleCommitments);
+  if (!exclusive) return [false, exclusivity];
+
   let expected;
-  if (kind === 'integers') expected = await reproduceIntegers(pulse.output, commitment.tag, count, min, max);
-  else if (kind === 'shuffle') expected = await reproduceShuffle(pulse.output, commitment.tag, items);
-  else return [false, `checkDraw cannot reproduce kind ${kind}`];
+  if (spec.kind === 'integers') {
+    expected = await reproduceIntegers(pulse.output, commitment.tag, spec.count, spec.min, spec.max);
+  } else if (spec.kind === 'shuffle') {
+    if (!items) return [false, 'shuffle requires the item list'];
+    expected = await reproduceShuffle(pulse.output, commitment.tag, items);
+  } else {
+    return [false, `checkDraw cannot reproduce kind ${spec.kind}`];
+  }
 
   if (JSON.stringify(expected) !== JSON.stringify(result)) {
     return [false, `result does not match the pulse: published ${JSON.stringify(result)}, `
       + `recomputed ${JSON.stringify(expected)}`];
   }
   return [true, `round ${pulse.round} is authentic, tag "${commitment.tag}" was committed at `
-    + `round ${commitment.created_after_round} before that pulse existed, and the result `
-    + 'reproduces exactly'];
+    + `round ${commitment.created_after_round} before that pulse existed, the draw ran to the `
+    + `committed specification, ${exclusivity}, and the result reproduces exactly`];
 }
 
 export class Beamline {
@@ -490,11 +668,22 @@ export class Beamline {
   }
 
   /** Announce a draw against a round that has not been emitted yet. */
-  commit(tag, { targetRound = null, roundsAhead = 1 } = {}) {
-    const body = { tag, rounds_ahead: roundsAhead };
+  /**
+   * Announce a draw against a round that has not been emitted yet.
+   *
+   * The shape is part of the announcement: the same tag against the same pulse names
+   * one person at max=100 and a different one at max=5000, so kind, count, bounds and
+   * the entry list are signed into the receipt alongside the name.
+   */
+  commit(tag, { targetRound = null, roundsAhead = 1, kind = 'integers', count = 1,
+                min = 0, max = 100, items = null } = {}) {
+    const body = { tag, rounds_ahead: roundsAhead, kind, count, min, max };
     if (targetRound !== null) body.target_round = targetRound;
+    if (items) body.items = items;
     return this.#request('POST', '/v1/beacon/commit', { body });
   }
+
+  rotations() { return this.#request('GET', '/v1/beacon/rotations'); }
 
   commitment(commitId) { return this.#request('GET', `/v1/beacon/commitment/${commitId}`); }
 
@@ -515,7 +704,8 @@ export class Beamline {
    */
   async verifyChain({ start = 1, count = 100, publicKey = null, trustedKeys = null } = {}) {
     const { pulses } = await this.#request('GET', '/v1/beacon/chain', { params: { start, count } });
-    return checkChain(pulses, publicKey ?? await this.publicKey(), { trustedKeys });
+    const { rotations } = await this.rotations();
+    return checkChain(pulses, publicKey ?? await this.publicKey(), { trustedKeys, rotations });
   }
 
   /**
@@ -533,7 +723,7 @@ export class Beamline {
                    items = null, commit = true, timeout = 300000 }) {
     let receipt = null;
     if (commit) {
-      receipt = await this.commit(tag, round === null ? {} : { targetRound: round });
+      receipt = await this.commit(tag, { targetRound: round, kind, count, min, max, items });
       round = receipt.target_round;
       await this.waitForRound(round, { timeout });
     } else if (round === null) {
@@ -558,11 +748,13 @@ export class Beamline {
           return [false, 'this draw was not committed: the numbers reproduce, but nothing '
             + 'shows the tag and round were not chosen with the pulse already published'];
         }
-        return checkDraw(pulse, r.commitment, r.data, publicKey, { kind, items, count, min, max });
+        return checkDraw(pulse, r.commitment, r.data, publicKey,
+                         { kind, items, count, min, max, siblings: r.sibling_commitments });
       },
       verify: async () => (await (async () => {
         if (!r.commitment) return [false, 'not committed'];
-        return checkDraw(pulse, r.commitment, r.data, publicKey, { kind, items, count, min, max });
+        return checkDraw(pulse, r.commitment, r.data, publicKey,
+                         { kind, items, count, min, max, siblings: r.sibling_commitments });
       })())[0],
     };
   }
