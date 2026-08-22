@@ -127,6 +127,56 @@ export async function reproduceShuffle(pulseOutputHex, tag, items) {
   return out;
 }
 
+/**
+ * `count` distinct values from [0, span), reimplemented from the server's spec.
+ *
+ * Two branches, and taking the wrong one silently produces different winners from the
+ * same pulse. A lottery drawing 6 of 49 shuffles a real list; an audit sampling 10k of
+ * 10M draws and rejects against a set, because materialising the range would be
+ * absurd. The threshold is part of the algorithm, not an optimisation detail.
+ */
+async function sampleIndices(stream, span, count) {
+  if (span <= 4 * count || span <= 4096) {
+    const pool = Array.from({ length: span }, (_, i) => i);
+    for (let i = 0; i < count; i++) {
+      const j = i + await boundedInt(stream, span - i);
+      [pool[i], pool[j]] = [pool[j], pool[i]];
+    }
+    return pool.slice(0, count);
+  }
+  const seen = new Set();
+  const out = [];
+  while (out.length < count) {
+    const v = await boundedInt(stream, span);
+    if (!seen.has(v)) { seen.add(v); out.push(v); }
+  }
+  return out;
+}
+
+/** `count` items drawn without replacement, as /v1/beacon/derive kind='sample'. */
+export async function reproduceSample(pulseOutputHex, tag, items, count) {
+  const s = new DerivedStream(pulseOutputHex, tag);
+  return (await sampleIndices(s, items.length, count)).map((i) => items[i]);
+}
+
+/**
+ * `count` DISTINCT integers in [min, max].
+ *
+ * What a raffle actually wants -- one prize each -- and a different algorithm from
+ * reproduceIntegers, not a filtered version of it.
+ */
+export async function reproduceUniqueIntegers(pulseOutputHex, tag, count, min, max) {
+  const span = max - min + 1;
+  if (count > span) throw new Error(`cannot draw ${count} unique values from a range of ${span}`);
+  const s = new DerivedStream(pulseOutputHex, tag);
+  return (await sampleIndices(s, span, count)).map((v) => v + min);
+}
+
+/** Raw derived bytes, hex-encoded, as /v1/beacon/derive kind='bytes'. */
+export async function reproduceBytes(pulseOutputHex, tag, n) {
+  return bytesToHex(await new DerivedStream(pulseOutputHex, tag).take(n));
+}
+
 /* ---------------------------------------------------------------------------
  * Canonical bytes.
  *
@@ -561,6 +611,14 @@ export async function checkDraw(pulse, commitment, result, publicKeyHex,
   } else if (spec.kind === 'shuffle') {
     if (!items) return [false, 'shuffle requires the item list'];
     expected = await reproduceShuffle(pulse.output, commitment.tag, items);
+  } else if (spec.kind === 'sample') {
+    // Over an explicit population when one was committed; otherwise over the committed
+    // integer range, which is how a raffle of N entrants is expressed.
+    expected = items
+      ? await reproduceSample(pulse.output, commitment.tag, items, spec.count)
+      : await reproduceUniqueIntegers(pulse.output, commitment.tag, spec.count, spec.min, spec.max);
+  } else if (spec.kind === 'bytes') {
+    expected = await reproduceBytes(pulse.output, commitment.tag, spec.count);
   } else {
     return [false, `checkDraw cannot reproduce kind ${spec.kind}`];
   }

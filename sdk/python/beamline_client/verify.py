@@ -365,6 +365,55 @@ def reproduce_shuffle(pulse_output_hex: str, tag: str, items: list) -> list:
     return out
 
 
+def _sample_indices(rand, span: int, count: int) -> list[int]:
+    """`count` distinct values from [0, span), reimplemented from the server's spec.
+
+    Two branches, and picking the wrong one silently produces different winners from
+    the same pulse. A lottery drawing 6 of 49 shuffles a real list; an audit sampling
+    10k of 10M draws and rejects against a set, because materialising the range would
+    be absurd. The threshold is part of the algorithm, not an optimisation detail.
+    """
+    if span <= 4 * count or span <= 4096:
+        pool = list(range(span))
+        for i in range(count):
+            j = i + bounded_int(rand, span - i)
+            pool[i], pool[j] = pool[j], pool[i]
+        return pool[:count]
+    seen: set[int] = set()
+    out: list[int] = []
+    while len(out) < count:
+        v = bounded_int(rand, span)
+        if v not in seen:
+            seen.add(v)
+            out.append(v)
+    return out
+
+
+def reproduce_sample(pulse_output_hex: str, tag: str, items: list, count: int) -> list:
+    """`count` items drawn without replacement, as /v1/beacon/derive kind='sample'."""
+    rand = DerivedStream(pulse_output_hex, tag)
+    return [items[i] for i in _sample_indices(rand, len(items), count)]
+
+
+def reproduce_unique_integers(pulse_output_hex: str, tag: str, count: int,
+                              minimum: int, maximum: int) -> list[int]:
+    """`count` DISTINCT integers in [minimum, maximum].
+
+    This is what a raffle actually wants -- one prize each -- and it is a different
+    algorithm from `reproduce_integers`, not a filtered version of it.
+    """
+    rand = DerivedStream(pulse_output_hex, tag)
+    span = maximum - minimum + 1
+    if count > span:
+        raise ValueError(f"cannot draw {count} unique values from a range of {span}")
+    return [minimum + v for v in _sample_indices(rand, span, count)]
+
+
+def reproduce_bytes(pulse_output_hex: str, tag: str, n: int) -> str:
+    """Raw derived bytes, hex-encoded, as /v1/beacon/derive kind='bytes'."""
+    return DerivedStream(pulse_output_hex, tag)(n).hex()
+
+
 # --- commitments -----------------------------------------------------------
 COMMITMENT_VERSION = "beamline/commitment/v2"
 COMMITMENT_BODY_FIELDS = ("version", "commit_id", "tag", "target_round",
@@ -600,17 +649,29 @@ def check_draw(pulse: dict, commitment: dict, result, public_key_hex: str | None
     exclusivity = why
 
     tag = commitment["tag"]
-    if spec["kind"] == "integers":
+    kind_ = spec["kind"]
+    if kind_ == "integers":
         expected = reproduce_integers(pulse["output"], tag, spec["count"],
                                       spec["min"], spec["max"])
-    elif spec["kind"] == "shuffle":
+    elif kind_ == "shuffle":
         if items is None:
             return False, "shuffle requires the item list"
         expected = reproduce_shuffle(pulse["output"], tag, items)
+    elif kind_ == "sample":
+        # Over an explicit population when one was committed; otherwise over the
+        # committed integer range, which is how a raffle of N entrants is expressed.
+        if items is not None:
+            expected = reproduce_sample(pulse["output"], tag, items, spec["count"])
+        else:
+            expected = reproduce_unique_integers(pulse["output"], tag, spec["count"],
+                                                 spec["min"], spec["max"])
+    elif kind_ == "bytes":
+        expected = reproduce_bytes(pulse["output"], tag, spec["count"])
     else:
-        return False, f"check_draw does not know how to reproduce kind {spec['kind']!r}"
+        return False, f"check_draw does not know how to reproduce kind {kind_!r}"
 
-    if list(result) != list(expected):
+    if (result if isinstance(expected, str) else list(result)) != (
+            expected if isinstance(expected, str) else list(expected)):
         return False, (f"result does not match the pulse: published {list(result)!r}, "
                        f"recomputed {expected!r}")
 
