@@ -378,6 +378,93 @@ class TestCommitmentEndpoints:
         assert "NOT COMMITTED" in r.json()["provenance_note"]
 
 
+class TestRaffleShapedDraws:
+    """The flagship case: distinct winners out of a numbered entry list.
+
+    This could not be run through the verifiable endpoint at all. The commit endpoint
+    signed a receipt for it and derive then refused, and the obvious workaround --
+    "unique": true -- was silently dropped, returning a 200 with duplicates possible.
+    """
+
+    def _raffle(self, client, key, **overrides):
+        headers = {"Authorization": f"Bearer {key}"}
+        body = {"tag": "raffle", "kind": "sample", "count": 3, "min": 1, "max": 4820}
+        body.update(overrides)
+        commit = client.post("/v1/beacon/commit", headers=headers, json=body).json()
+        SERVICE.beacon.emit()
+        derive = client.post("/v1/beacon/derive", headers=headers, json={
+            "round": commit["target_round"], "commit_id": commit["commit_id"],
+            **{k: v for k, v in body.items() if k != "target_round"}})
+        return commit, derive
+
+    def test_a_raffle_over_a_range_runs(self, signed_client, key):
+        commit, derive = self._raffle(signed_client, key)
+        assert derive.status_code == 200, derive.text
+        winners = derive.json()["data"]
+        assert len(winners) == 3
+        assert len(set(winners)) == 3, "a raffle must not name the same entrant twice"
+        assert all(1 <= w <= 4820 for w in winners)
+
+    def test_the_independent_verifier_reproduces_it(self, signed_client, key):
+        """The point of the endpoint: someone else can recompute the winners."""
+        import sys
+        sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "sdk" / "python"))
+        from beamline_client import verify as v
+
+        commit, derive = self._raffle(signed_client, key)
+        pulse = signed_client.get(f"/v1/beacon/pulse/{commit['target_round']}").json()
+        pk = signed_client.get("/v1/beacon/public-key").json()["public_key"]
+
+        assert v.reproduce_unique_integers(
+            pulse["output"], "raffle", 3, 1, 4820) == derive.json()["data"]
+        ok, why = v.check_draw(pulse, commit, derive.json()["data"], pk,
+                               kind="sample", count=3, minimum=1, maximum=4820)
+        assert ok, why
+
+    def test_unique_is_honoured_rather_than_dropped(self, signed_client, key):
+        """It used to be silently ignored -- a 200 with the wrong answer."""
+        headers = {"Authorization": f"Bearer {key}"}
+        commit = signed_client.post("/v1/beacon/commit", headers=headers, json={
+            "tag": "lottery", "unique": True, "count": 6, "min": 1, "max": 49}).json()
+        SERVICE.beacon.emit()
+        derive = signed_client.post("/v1/beacon/derive", headers=headers, json={
+            "round": commit["target_round"], "tag": "lottery",
+            "commit_id": commit["commit_id"], "unique": True,
+            "count": 6, "min": 1, "max": 49})
+        assert derive.status_code == 200, derive.text
+        assert len(set(derive.json()["data"])) == 6
+
+    def test_unique_is_stored_under_one_spelling(self, signed_client, key):
+        """Two request spellings, one signed specification.
+
+        A verifier that has to decide whether kind='integers'+unique means the same as
+        kind='sample' is a verifier that can be argued with.
+        """
+        headers = {"Authorization": f"Bearer {key}"}
+        commit = signed_client.post("/v1/beacon/commit", headers=headers, json={
+            "tag": "lottery-2", "unique": True, "count": 6, "min": 1, "max": 49}).json()
+        assert commit["draw"]["kind"] == "sample"
+
+    def test_committing_to_an_impossible_draw_is_refused(self, signed_client, key):
+        """Otherwise the receipt is signed and public before anyone finds out."""
+        r = signed_client.post("/v1/beacon/commit",
+                               headers={"Authorization": f"Bearer {key}"},
+                               json={"tag": "impossible", "kind": "sample",
+                                     "count": 50, "min": 1, "max": 10})
+        assert r.status_code == 400
+        assert "distinct values from a population of 10" in r.json()["detail"]
+
+    def test_an_unknown_field_is_an_error_not_a_shrug(self, signed_client, key):
+        """A dropped field is a silent behaviour change, which is how unique broke."""
+        headers = {"Authorization": f"Bearer {key}"}
+        for path, body in (
+            ("/v1/beacon/derive", {"round": 1, "tag": "t", "conut": 3}),
+            ("/v1/beacon/commit", {"tag": "t", "uniqeu": True}),
+        ):
+            r = signed_client.post(path, headers=headers, json=body)
+            assert r.status_code == 422, f"{path} accepted an unknown field"
+
+
 class TestVerifyEndpointHonesty:
     def test_an_unsigned_deployment_is_not_reported_as_attributable(self, client):
         """The `client` fixture's beacon has no key, as an unsigned deployment would not."""
