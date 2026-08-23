@@ -1,0 +1,58 @@
+# Fly.io deployment for the live Beamline beacon.
+#
+# Chosen for one reason: the beacon must never idle. A pulse every sixty seconds is
+# the product, and platforms that scale to zero between requests would leave holes in
+# the chain that `/v1/beacon/verify-chain` correctly reports as withheld rounds --
+# indistinguishable, to a sceptic, from an operator hiding a pulse they disliked.
+#
+# Hence: auto_stop_machines = false, min_machines_running = 1, and exactly one machine.
+# See the Dockerfile for why the count is one and not more.
+
+app = "beamline"
+primary_region = "iad"
+
+[build]
+  dockerfile = "Dockerfile"
+
+[env]
+  BEAMLINE_HOST = "0.0.0.0"
+  BEAMLINE_PORT = "8080"
+  BEAMLINE_DB = "/data/beamline.db"
+  BEAMLINE_POOL_DIR = "/data/pool"
+  BEAMLINE_SEED_POOL = "/data/anu_seed_pool.txt"
+  BEAMLINE_BEACON_PERIOD_SECONDS = "60"
+  BEAMLINE_CHALLENGE_ENABLED = "1"
+  BEAMLINE_CHALLENGE_PRIZE = "One month of Claude Pro, paid by the operator."
+
+# The chain lives here. Losing this volume does not just lose data -- it restarts the
+# beacon at round 1 with a genesis link, which reads to anybody watching as the
+# operator quietly replacing history. Snapshots are on by default; leave them on.
+[[mounts]]
+  source = "beamline_data"
+  destination = "/data"
+  snapshot_retention = 14
+
+[http_service]
+  internal_port = 8080
+  force_https = true
+  auto_stop_machines = false
+  auto_start_machines = false
+  min_machines_running = 1
+  processes = ["app"]
+
+  # /healthz is liveness only. It deliberately does not gate on the entropy sources
+  # being reachable: ANU or NOAA going down degrades the pool's provenance, but the
+  # pool still has the kernel CSPRNG and the beacon must keep beating. Restarting the
+  # machine because a third party is having an outage would cause the exact chain gap
+  # this file exists to prevent.
+  [[http_service.checks]]
+    grace_period = "30s"
+    interval = "15s"
+    method = "GET"
+    path = "/healthz"
+    timeout = "5s"
+
+[[vm]]
+  size = "shared-cpu-1x"
+  memory = "512mb"
+  cpus = 1
