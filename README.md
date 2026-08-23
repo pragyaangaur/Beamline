@@ -18,6 +18,7 @@ beamline serve --port 8080
 
 - [What it does](#what-it-does)
 - [Try it](#try-it)
+- [Try to break it](#try-to-break-it)
 - [Quick start](#quick-start)
 - [Running a fair draw](#running-a-fair-draw)
 - [API reference](#api-reference)
@@ -88,6 +89,47 @@ BEAMLINE_ADMIN_TOKEN=... python examples/user_journey.py
 
 **[`examples/draw_page.html`](examples/draw_page.html)** is the artifact a customer would
 publish: a finished draw record with a "verify in this browser" button.
+
+**No browser and no Python?** `beamline verify --draw record.json` checks a published
+record offline and exits non-zero if it does not hold up. Verification should not require
+being a programmer — the person who most needs it is the entrant who lost.
+
+## Try to break it
+
+The claim is narrow on purpose: **you cannot predict a pulse before it is published,
+and you cannot make a verifier accept a draw that was not fixed in advance.** If you can
+do either, the code is wrong and I want to know.
+
+What a break looks like, in order of how much it would matter:
+
+| Claim | How to show it |
+|---|---|
+| Predict a pulse | Publish `output` for a round before that round's timestamp. Any method. |
+| Forge a chain a verifier accepts | Any chain that passes `check_chain` against the published key without the key. |
+| Pass a draw that was not committed | Any result `check_draw` accepts where the tag, round or shape was chosen after the pulse. |
+| Two verifiers disagree | One pulse where Python and JavaScript reach different verdicts. |
+| Bias the output | A statistical argument against `drbg` output with enough samples to be convincing. |
+
+Three things that are **not** breaks, because they are already documented limits:
+
+- **The operator withholding a pulse and re-rolling.** Beamline can emit a pulse,
+  dislike it, and publish the next one instead. This is real, it is in the
+  [threat model](#threat-model), and closing it needs external anchoring that is not
+  built. Demonstrating it is confirming a known gap, not finding one.
+- **Reading raw source bytes over the network.** The ANU stream arrives over a third
+  party's TLS and is credited 6 bits per byte for that reason. Intercepting it does not
+  predict a pulse, because every extraction folds in a fresh `os.urandom(64)`.
+- **`raw-packed` failing SP 800-22.** It is meant to. See
+  [Randomness testing](#randomness-testing) — that failure is the evidence the suite has
+  detection power, and the conditioned stream is what enters the pool.
+
+The fastest way in is [`tests/test_attacks.py`](tests/test_attacks.py): every attack that
+once worked against this codebase, kept as a test. If you find one it does not cover,
+that is the interesting case.
+
+```bash
+beamline verify --draw record.json --public-key <key you recorded yourself>
+```
 
 ## Quick start
 
