@@ -6,6 +6,9 @@ everyone a result they can check for themselves.
 [**Try it in your browser →**](https://pragyaangaur.github.io/Beamline/) Run a draw, then
 try to rig it. Nothing to install.
 
+[**Or try to break it →**](https://pragyaangaur.github.io/Beamline/challenge.html) Predict
+the next value the live beacon publishes, before it publishes it. There is a prize.
+
 ```bash
 pip install -e ".[dev,qa]"
 ```
@@ -19,6 +22,7 @@ beamline serve --port 8080
 - [What it does](#what-it-does)
 - [Try it](#try-it)
 - [Try to break it](#try-to-break-it)
+- [The standing challenge](#the-standing-challenge)
 - [Quick start](#quick-start)
 - [Running a fair draw](#running-a-fair-draw)
 - [API reference](#api-reference)
@@ -130,6 +134,64 @@ that is the interesting case.
 ```bash
 beamline verify --draw record.json --public-key <key you recorded yourself>
 ```
+
+Four of those five need nothing but this repository. The first one needs a beacon that
+is actually running, which is what the next section is for.
+
+## The standing challenge
+
+**Predict a pulse before it is published and the prize is yours.** The terms live at
+[`/v1/challenge/rules`](https://beamline.fly.dev/v1/challenge/rules) rather than in a
+post somewhere, so they cannot be edited after somebody wins.
+
+[**The challenge page**](https://pragyaangaur.github.io/Beamline/challenge.html) is the
+easy way in. Under it:
+
+```bash
+curl -s https://beamline.fly.dev/v1/challenge/next
+```
+
+```bash
+curl -s -X POST https://beamline.fly.dev/v1/challenge/predict \
+  -H "Content-Type: application/json" \
+  -d '{"predicted_output":"<128 hex characters>","handle":"you"}'
+```
+
+You get back a receipt signed with the same Ed25519 key that signs every pulse,
+recording the round the chain had reached when your prediction arrived. Check it
+yourself rather than trusting the response:
+
+```python
+from beamline.challenge import verify_prediction
+
+ok, why = verify_prediction(receipt, public_key_hex)
+```
+
+The server refuses any prediction whose round has already been published, and that
+refusal is the whole mechanism — a receipt that could be issued after the fact would be
+worthless to the person holding it. Resolution runs automatically the moment your round
+lands; `GET /v1/challenge/round/{n}` lists every attempt against a round, and
+`GET /v1/challenge/scoreboard` gives the running totals.
+
+**The target is the full 512-bit output, not a small number.** A one-in-a-hundred guess
+gets won by luck roughly once every hundred tries, which would cost a prize and prove
+nothing about the beacon. The claim under test is unpredictability, so the target is the
+entire published value.
+
+**Losing attempts are the point.** Each is scored on how many leading bits it shared
+with the real output — a geometric(1/2) sample under the null hypothesis, mean 1.0 bit.
+The scoreboard reports the running mean against that expectation, so failed predictions
+accumulate into a public bias test instead of into nothing. That is the fifth break on
+the list above, made attackable by the people attempting the first.
+
+**And the conflict of interest, stated plainly:** the operator holds the prize. Denying a
+winning receipt would mean repudiating the signing key the entire chain depends on, which
+costs far more than paying out — but Beamline can still withhold a pulse it dislikes, as
+the [threat model](#threat-model) says. A withheld round leaves a hole that
+`GET /v1/beacon/verify-chain` reports. Watch the chain, not the promise.
+
+Running your own: see [DEPLOY.md](DEPLOY.md). It is one always-on machine, and it must
+stay one — the chain is single-writer.
 
 ## Quick start
 
