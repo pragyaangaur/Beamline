@@ -20,6 +20,7 @@ import logging
 import os
 import time
 
+from .challenge import ChallengeRegistry
 from .config import CONFIG, TIERS
 from .db import Database
 from .entropy.beacon import Beacon
@@ -47,6 +48,7 @@ class BeamlineService:
 
         self.drbg: HmacDrbg | None = None
         self.beacon: Beacon | None = None
+        self.challenge: ChallengeRegistry | None = None
         self._tasks: list[asyncio.Task] = []
         self._last_reseed = 0.0
         self._bytes_since_reseed = 0
@@ -91,6 +93,8 @@ class BeamlineService:
                 "running with BEAMLINE_ALLOW_UNSIGNED_BEACON: pulses are chained but "
                 "UNSIGNED and verification will report them as unattributed."
             )
+
+        self.challenge = ChallengeRegistry(self.db, self.beacon)
 
         for src in self.sources:
             self._tasks.append(asyncio.create_task(self._poll_loop(src), name=f"poll:{src.name}"))
@@ -165,6 +169,25 @@ class BeamlineService:
                 raise
             except Exception:
                 log.exception("pulse emission failed")
+                continue
+
+            # Strictly after the pulse is emitted and persisted. The beacon never
+            # reads the prediction registry while deciding what to publish, and this
+            # ordering is the only reason a sceptic can confirm that from the source
+            # rather than taking it on trust. Wrapped separately so that a fault in
+            # scoring can never stop the chain: a beacon that skips a beat because of
+            # a bookkeeping bug has damaged the thing it exists to provide.
+            try:
+                for outcome in self.challenge.resolve_due(pulse["round"]):
+                    if outcome["winners"]:
+                        log.warning(
+                            "PREDICTION MATCHED at round %d by %s -- verify the receipt "
+                            "and pay out", outcome["round"], ", ".join(outcome["winners"]))
+            except asyncio.CancelledError:
+                raise
+            except Exception:
+                log.exception("resolving predictions for round %d failed; they stay "
+                              "unresolved and will be retried next pulse", pulse["round"])
 
     # --- randomness -------------------------------------------------------
     def random_bytes(self, n: int) -> bytes:
@@ -197,6 +220,10 @@ class BeamlineService:
                 "pulses": self.db.pulse_count(),
                 "signed": bool(self.beacon and self.beacon.public_key_hex),
                 "public_key": self.beacon.public_key_hex if self.beacon else None,
+            },
+            "challenge": {
+                "enabled": CONFIG.challenge_enabled,
+                "predictions": self.db.prediction_stats()["total"] if self.challenge else 0,
             },
             "tiers": {name: vars(t) for name, t in TIERS.items()},
         }

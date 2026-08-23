@@ -87,6 +87,39 @@ CREATE TABLE IF NOT EXISTS key_rotations (
     created_at_ms   INTEGER NOT NULL,
     body            TEXT NOT NULL      -- full signed rotation record JSON
 );
+
+-- A stranger's attempt to predict a pulse before it exists.
+--
+-- This table is the challenge. Beamline claims a pulse cannot be predicted, and a
+-- claim nobody can attempt is not falsifiable -- it is marketing. Recording the
+-- attempt, signed, against a round that has not been emitted is what converts
+-- "trust us" into a bet the operator can visibly lose.
+--
+-- received_after_round is the load-bearing column, exactly as it is for commitments:
+-- if it is below target_round, the pulse being predicted did not exist when the
+-- prediction was lodged. If it is not, the row is a copy and scores nothing.
+--
+-- prefix_bits is kept for losing rows too, which is most of them. Each is one sample
+-- of a geometric(1/2) distribution under the null hypothesis, so the failures
+-- accumulate into a public test for bias in the published output.
+CREATE TABLE IF NOT EXISTS predictions (
+    prediction_id        TEXT PRIMARY KEY,
+    target_round         INTEGER NOT NULL,
+    predicted_output     TEXT NOT NULL,
+    handle               TEXT NOT NULL DEFAULT '',
+    submitter            TEXT NOT NULL DEFAULT '',   -- coarse origin, for rate limiting
+    received_at_ms       INTEGER NOT NULL,
+    received_after_round INTEGER NOT NULL,
+    resolved_at_ms       INTEGER,
+    actual_output        TEXT,
+    prefix_bits          INTEGER,
+    exact                INTEGER NOT NULL DEFAULT 0,
+    body                 TEXT NOT NULL      -- full signed prediction receipt JSON
+);
+CREATE INDEX IF NOT EXISTS predictions_round ON predictions(target_round);
+CREATE INDEX IF NOT EXISTS predictions_pending ON predictions(target_round, resolved_at_ms);
+CREATE INDEX IF NOT EXISTS predictions_submitter ON predictions(submitter, received_at_ms);
+CREATE INDEX IF NOT EXISTS predictions_recent ON predictions(received_at_ms DESC);
 """
 
 
@@ -258,6 +291,117 @@ class Database:
         rows = self._conn().execute(
             "SELECT body FROM key_rotations ORDER BY effective_round").fetchall()
         return [json.loads(r["body"]) for r in rows]
+
+    # --- predictions ------------------------------------------------------
+    def insert_prediction(self, receipt: dict, submitter: str = "") -> None:
+        with self._conn() as c:
+            c.execute(
+                "INSERT INTO predictions (prediction_id, target_round, predicted_output,"
+                " handle, submitter, received_at_ms, received_after_round, body)"
+                " VALUES (?,?,?,?,?,?,?,?)",
+                (receipt["prediction_id"], receipt["target_round"],
+                 receipt["predicted_output"], receipt.get("handle", ""), submitter,
+                 receipt["received_at_ms"], receipt["received_after_round"],
+                 json.dumps(receipt)),
+            )
+
+    def _prediction_row(self, row: sqlite3.Row) -> dict:
+        return {
+            "prediction_id": row["prediction_id"],
+            "target_round": row["target_round"],
+            "predicted_output": row["predicted_output"],
+            "handle": row["handle"],
+            "resolved_at_ms": row["resolved_at_ms"],
+            "actual_output": row["actual_output"],
+            "prefix_bits": row["prefix_bits"],
+            "exact": bool(row["exact"]),
+            "receipt": json.loads(row["body"]),
+        }
+
+    def get_prediction(self, prediction_id: str) -> dict | None:
+        row = self._conn().execute(
+            "SELECT * FROM predictions WHERE prediction_id = ?", (prediction_id,)
+        ).fetchone()
+        return self._prediction_row(row) if row else None
+
+    def predictions_for_round(self, target_round: int) -> list[dict]:
+        """Every prediction lodged against one round.
+
+        Public and complete, for the same reason the commitment list is: a challenge
+        where the operator chooses which attempts to acknowledge is not a challenge.
+        """
+        rows = self._conn().execute(
+            "SELECT * FROM predictions WHERE target_round = ? ORDER BY received_at_ms",
+            (target_round,),
+        ).fetchall()
+        return [self._prediction_row(r) for r in rows]
+
+    def unresolved_predictions(self, target_round: int) -> list[dict]:
+        rows = self._conn().execute(
+            "SELECT * FROM predictions WHERE target_round = ? AND resolved_at_ms IS NULL",
+            (target_round,),
+        ).fetchall()
+        return [self._prediction_row(r) for r in rows]
+
+    def resolve_prediction(self, prediction_id: str, actual_output: str,
+                           bits: int, exact: bool) -> None:
+        """Record the verdict. Write-once: a resolved prediction is never re-scored.
+
+        The `resolved_at_ms IS NULL` guard is not defensive tidiness. Without it a
+        replayed resolution could overwrite a winning row with a later, losing one,
+        which is precisely the move an operator would want and precisely what the
+        challenger cannot check for themselves.
+        """
+        with self._conn() as c:
+            c.execute(
+                "UPDATE predictions SET resolved_at_ms = ?, actual_output = ?,"
+                " prefix_bits = ?, exact = ? WHERE prediction_id = ?"
+                " AND resolved_at_ms IS NULL",
+                (int(time.time() * 1000), actual_output, bits, 1 if exact else 0,
+                 prediction_id),
+            )
+
+    def rounds_awaiting_resolution(self, max_round: int, limit: int = 50) -> list[int]:
+        """Rounds that are published but still hold unscored predictions.
+
+        Resolution normally happens the instant a round lands. This exists because
+        "normally" is not good enough for the one table a stranger is invited to
+        audit: a restart mid-pulse, or a transient error in the pulse loop, would
+        otherwise leave a prediction permanently unscored, and an unscored prediction
+        is indistinguishable from an ignored one.
+        """
+        rows = self._conn().execute(
+            "SELECT DISTINCT target_round FROM predictions"
+            " WHERE resolved_at_ms IS NULL AND target_round <= ?"
+            " ORDER BY target_round LIMIT ?",
+            (max_round, limit),
+        ).fetchall()
+        return [r["target_round"] for r in rows]
+
+    def count_predictions_by(self, submitter: str, target_round: int) -> int:
+        return self._conn().execute(
+            "SELECT COUNT(*) AS n FROM predictions WHERE submitter = ? AND target_round = ?",
+            (submitter, target_round),
+        ).fetchone()["n"]
+
+    def recent_predictions(self, limit: int = 20) -> list[dict]:
+        rows = self._conn().execute(
+            "SELECT * FROM predictions ORDER BY received_at_ms DESC LIMIT ?",
+            (min(limit, 200),),
+        ).fetchall()
+        return [self._prediction_row(r) for r in rows]
+
+    def prediction_stats(self) -> dict:
+        row = self._conn().execute(
+            "SELECT COUNT(*) AS total,"
+            " COUNT(resolved_at_ms) AS resolved,"
+            " COALESCE(SUM(exact), 0) AS exact,"
+            " COALESCE(MAX(prefix_bits), 0) AS best_bits,"
+            " COALESCE(AVG(prefix_bits), 0.0) AS mean_bits,"
+            " COUNT(DISTINCT NULLIF(handle, '')) AS handles"
+            " FROM predictions"
+        ).fetchone()
+        return dict(row)
 
     def pulse_count(self) -> int:
         return self._conn().execute("SELECT COUNT(*) AS n FROM pulses").fetchone()["n"]

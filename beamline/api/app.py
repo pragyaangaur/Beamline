@@ -8,7 +8,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from .. import __version__
 from ..service import SERVICE
-from .routes import admin, beacon, meta, random as random_routes
+from .routes import admin, beacon, challenge, meta, random as random_routes
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s %(message)s")
 
@@ -45,6 +45,7 @@ app.add_middleware(
 app.include_router(meta.router)
 app.include_router(random_routes.router)
 app.include_router(beacon.router)
+app.include_router(challenge.router)
 app.include_router(admin.router)
 
 
@@ -56,4 +57,5 @@ async def root():
         "about": "/v1/about",
         "health": "/v1/health",
         "beacon": "/v1/beacon/latest",
+        "challenge": "/v1/challenge/rules",
     }
