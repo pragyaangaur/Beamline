@@ -41,9 +41,21 @@ pulse did not exist when you named the draw, so nobody could have picked the out
 afterwards anyone can recompute the result from the published pulse alone, with no account
 and no cooperation from you.
 
-The randomness underneath comes from a quantum source (the ANU vacuum-fluctuation QRNG),
-live NOAA space-weather readings, and the host kernel CSPRNG, mixed in a health-monitored
-accumulator that seeds a NIST SP 800-90A DRBG.
+The randomness underneath comes from three sources, mixed in a health-monitored
+accumulator that seeds a NIST SP 800-90A DRBG:
+
+- **A quantum source.** The Australian National University measures vacuum fluctuations
+  of the electromagnetic field and publishes the result; Beamline reads their public
+  endpoint. The device is ANU's, not ours, and the bytes arrive over their TLS
+  connection — which is why they are credited 6 bits per byte rather than 8.
+- **Live NOAA space weather.** X-ray flux, solar wind, magnetometer. **Credited zero
+  bits**, and deliberately: it is public data, so anyone can fetch the same readings and
+  it can hold no secret. It is in the mix for provenance and timing — a pulse's
+  provenance names the NOAA readings it consumed, which anyone can re-fetch to confirm
+  the pulse was not produced before that data existed.
+- **The host kernel CSPRNG.** The one input an external attacker cannot observe, and
+  the reason predicting a pulse is hard. Every extraction folds in a fresh
+  `os.urandom(64)` before hashing.
 
 ### Where Beamline is not the right tool
 
