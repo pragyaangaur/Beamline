@@ -70,6 +70,11 @@ async def build() -> dict:
     return {
         "tag": TAG, "winners": winners, "entrants": ENTRANTS, "kind": "sample",
         "pulse": pulse, "commitment": commitment,
+        # Every commitment registered against the deciding round, not just ours.
+        # Publishing the record without this leaves "was this their only draw against
+        # this pulse?" resting on our own receipt's sequence number, and a record that
+        # is meant to be the example should not need that caveat.
+        "sibling_commitments": svc.db.commitments_for_round(pulse["round"]),
         "publicKey": svc.beacon.public_key_hex,
         "min": 1, "max": ENTRANTS, "count": WINNERS,
     }

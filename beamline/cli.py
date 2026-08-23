@@ -6,6 +6,7 @@
     beamline keys revoke <key_id>
     beamline beacon-key                  generate an Ed25519 signing key
     beamline selftest                    statistical smoke test of the generator stack
+    beamline verify --draw record.json   check a published draw, offline
 """
 
 from __future__ import annotations
@@ -145,6 +146,96 @@ def _cmd_selftest(args) -> int:
     return 1 if failures else 0
 
 
+def _cmd_verify(args) -> int:
+    """Check a published draw record without writing any code.
+
+    The verifier has always been a library, which quietly assumed the sceptic is a
+    Python programmer. The person who most needs to check a giveaway is the entrant who
+    lost it, and telling them to import a module is telling them to trust the result.
+
+    Reads a record -- the JSON a runner publishes: pulse, commitment, result, and the
+    signing key it should be under -- and answers the whole question, offline. Exits
+    non-zero when the answer is no, so it can be used in a script.
+    """
+    import sys as _sys
+    from pathlib import Path as _Path
+
+    sdk = _Path(__file__).resolve().parent.parent / "sdk" / "python"
+    if sdk.is_dir():
+        _sys.path.insert(0, str(sdk))
+    try:
+        from beamline_client import verify as V
+    except ImportError:  # pragma: no cover - depends on install layout
+        print("could not import beamline_client; install the SDK or run from the repo",
+              file=sys.stderr)
+        return 2
+
+    try:
+        record = json.loads(_Path(args.draw).read_text())
+    except (OSError, ValueError) as e:
+        print(f"could not read {args.draw}: {e}", file=sys.stderr)
+        return 2
+
+    key = args.public_key or record.get("public_key") or record.get("publicKey")
+    if not key:
+        print("no signing key given. Pass --public-key with the key you recorded out of\n"
+              "band; a key taken from the same place as the record proves only that the\n"
+              "record agrees with itself.", file=sys.stderr)
+        return 2
+
+    pulse = record.get("pulse")
+    commitment = record.get("commitment")
+    result = record.get("winners", record.get("result", record.get("data")))
+    if pulse is None or result is None:
+        print("the record needs at least 'pulse' and 'winners'", file=sys.stderr)
+        return 2
+
+    spec = (commitment or {}).get("draw") or {}
+    kind = spec.get("kind", record.get("kind", "integers"))
+    checks: list[tuple[str, bool, str]] = []
+
+    ok, why = V.check_pulse(pulse, key)
+    checks.append(("pulse", ok, why))
+
+    if commitment is None:
+        checks.append(("commitment", False,
+                       "none published. The numbers may reproduce, but nothing shows "
+                       "the draw was named before this pulse existed"))
+    else:
+        ok, why = V.check_draw(
+            pulse, commitment, result, key,
+            kind=kind, items=record.get("items"),
+            count=spec.get("count", record.get("count", 1)),
+            minimum=spec.get("min", record.get("min", 0)),
+            maximum=spec.get("max", record.get("max", 100)),
+            siblings=record.get("sibling_commitments"),
+        )
+        checks.append(("draw", ok, why))
+
+    if record.get("chain"):
+        ok, why = V.check_chain(record["chain"], key,
+                                rotations=record.get("rotations"))
+        checks.append(("chain", ok, why))
+
+    verdict = all(ok for _, ok, _ in checks)
+    if args.json:
+        print(json.dumps({
+            "valid": verdict,
+            "checks": [{"name": n, "ok": o, "reason": w} for n, o, w in checks],
+        }, indent=1))
+    else:
+        for name, o, why in checks:
+            print(f"  {'PASS' if o else 'FAIL'}  {name:11} {why}")
+        print()
+        print("VERIFIED" if verdict else "NOT VERIFIED -- do not believe this result")
+        if verdict and not record.get("sibling_commitments"):
+            print("\nNote: no commitment list for the round was included, so 'was this "
+                  "\n      the only draw registered against this pulse?' rests on the "
+                  "\n      receipt's own sequence number. Fetch "
+                  "/v1/beacon/commitments/<round>\n      to settle it.")
+    return 0 if verdict else 1
+
+
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(prog="beamline", description="Beamline randomness service")
     sub = ap.add_subparsers(dest="cmd", required=True)
@@ -179,6 +270,15 @@ def main(argv: list[str] | None = None) -> int:
     st = sub.add_parser("selftest", help="statistical smoke test of the generator stack")
     st.add_argument("-n", type=int, default=200_000)
     st.set_defaults(func=_cmd_selftest)
+
+    vf = sub.add_parser("verify", help="check a published draw record, offline")
+    vf.add_argument("--draw", required=True, metavar="FILE",
+                    help="the published record: pulse, commitment, winners")
+    vf.add_argument("--public-key", default=None,
+                    help="the signing key you expect, recorded out of band. Falls back "
+                         "to the one in the record, which proves less.")
+    vf.add_argument("--json", action="store_true", help="machine-readable output")
+    vf.set_defaults(func=_cmd_verify)
 
     args = ap.parse_args(argv)
     return args.func(args)

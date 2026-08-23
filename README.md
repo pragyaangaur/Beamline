@@ -18,6 +18,7 @@ beamline serve --port 8080
 
 - [What it does](#what-it-does)
 - [Try it](#try-it)
+- [Try to break it](#try-to-break-it)
 - [Quick start](#quick-start)
 - [Running a fair draw](#running-a-fair-draw)
 - [API reference](#api-reference)
@@ -41,9 +42,21 @@ pulse did not exist when you named the draw, so nobody could have picked the out
 afterwards anyone can recompute the result from the published pulse alone, with no account
 and no cooperation from you.
 
-The randomness underneath comes from a quantum source (the ANU vacuum-fluctuation QRNG),
-live NOAA space-weather readings, and the host kernel CSPRNG, mixed in a health-monitored
-accumulator that seeds a NIST SP 800-90A DRBG.
+The randomness underneath comes from three sources, mixed in a health-monitored
+accumulator that seeds a NIST SP 800-90A DRBG:
+
+- **A quantum source.** The Australian National University measures vacuum fluctuations
+  of the electromagnetic field and publishes the result; Beamline reads their public
+  endpoint. The device is ANU's, not ours, and the bytes arrive over their TLS
+  connection — which is why they are credited 6 bits per byte rather than 8.
+- **Live NOAA space weather.** X-ray flux, solar wind, magnetometer. **Credited zero
+  bits**, and deliberately: it is public data, so anyone can fetch the same readings and
+  it can hold no secret. It is in the mix for provenance and timing — a pulse's
+  provenance names the NOAA readings it consumed, which anyone can re-fetch to confirm
+  the pulse was not produced before that data existed.
+- **The host kernel CSPRNG.** The one input an external attacker cannot observe, and
+  the reason predicting a pulse is hard. Every extraction folds in a fresh
+  `os.urandom(64)` before hashing.
 
 ### Where Beamline is not the right tool
 
@@ -76,6 +89,47 @@ BEAMLINE_ADMIN_TOKEN=... python examples/user_journey.py
 
 **[`examples/draw_page.html`](examples/draw_page.html)** is the artifact a customer would
 publish: a finished draw record with a "verify in this browser" button.
+
+**No browser and no Python?** `beamline verify --draw record.json` checks a published
+record offline and exits non-zero if it does not hold up. Verification should not require
+being a programmer — the person who most needs it is the entrant who lost.
+
+## Try to break it
+
+The claim is narrow on purpose: **you cannot predict a pulse before it is published,
+and you cannot make a verifier accept a draw that was not fixed in advance.** If you can
+do either, the code is wrong and I want to know.
+
+What a break looks like, in order of how much it would matter:
+
+| Claim | How to show it |
+|---|---|
+| Predict a pulse | Publish `output` for a round before that round's timestamp. Any method. |
+| Forge a chain a verifier accepts | Any chain that passes `check_chain` against the published key without the key. |
+| Pass a draw that was not committed | Any result `check_draw` accepts where the tag, round or shape was chosen after the pulse. |
+| Two verifiers disagree | One pulse where Python and JavaScript reach different verdicts. |
+| Bias the output | A statistical argument against `drbg` output with enough samples to be convincing. |
+
+Three things that are **not** breaks, because they are already documented limits:
+
+- **The operator withholding a pulse and re-rolling.** Beamline can emit a pulse,
+  dislike it, and publish the next one instead. This is real, it is in the
+  [threat model](#threat-model), and closing it needs external anchoring that is not
+  built. Demonstrating it is confirming a known gap, not finding one.
+- **Reading raw source bytes over the network.** The ANU stream arrives over a third
+  party's TLS and is credited 6 bits per byte for that reason. Intercepting it does not
+  predict a pulse, because every extraction folds in a fresh `os.urandom(64)`.
+- **`raw-packed` failing SP 800-22.** It is meant to. See
+  [Randomness testing](#randomness-testing) — that failure is the evidence the suite has
+  detection power, and the conditioned stream is what enters the pool.
+
+The fastest way in is [`tests/test_attacks.py`](tests/test_attacks.py): every attack that
+once worked against this codebase, kept as a test. If you find one it does not cover,
+that is the interesting case.
+
+```bash
+beamline verify --draw record.json --public-key <key you recorded yourself>
+```
 
 ## Quick start
 
@@ -480,6 +534,16 @@ forged.
 ```bash
 beamline selftest -n 200000
 ```
+
+```bash
+beamline verify --draw record.json --public-key <key>
+```
+
+Checks a published draw record offline: the pulse is authentic under the key you name,
+the commitment predates it, the commitment covers this draw's tag *and shape*, and the
+result reproduces. Exits non-zero when it does not, so it can run in a script. If the
+record omits the round's commitment list, the output says the exclusivity check rested
+on the receipt's own sequence number rather than reporting an unqualified pass.
 
 ## Security notes
 
