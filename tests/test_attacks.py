@@ -24,6 +24,8 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
+import re
 import subprocess
 import sys
 import tempfile
@@ -587,3 +589,77 @@ class TestCrossImplementationAgreement:
         assert node.returncode == 0, node.stdout + node.stderr
         assert "reproduces sample" in node.stdout, (
             "the harness no longer checks draw reproduction:\n" + node.stdout)
+
+
+class TestVerifyCommand:
+    """`beamline verify` -- the verifier for people who do not write Python.
+
+    The independent verifier has always been a library, which quietly assumed the
+    sceptic is a programmer. The person who most needs to check a giveaway is the
+    entrant who lost it, and telling them to import a module is telling them to trust
+    the result.
+    """
+
+    @pytest.fixture
+    def record(self, tmp_path):
+        """The JSON a runner publishes, taken from the real draw page."""
+        page = (ROOT / "examples" / "draw_page.html").read_text()
+        blob = re.search(
+            r'<script id="draw-data" type="application/json">(.*?)</script>',
+            page, re.S).group(1)
+        path = tmp_path / "record.json"
+        path.write_text(blob)
+        return path
+
+    def _run(self, path, *extra):
+        return subprocess.run(
+            [sys.executable, "-m", "beamline.cli", "verify", "--draw", str(path), *extra],
+            capture_output=True, text=True, cwd=ROOT,
+            env={**os.environ, "PYTHONPATH": f"{ROOT}:{ROOT / 'sdk' / 'python'}"})
+
+    def test_an_honest_record_verifies(self, record):
+        out = self._run(record)
+        assert out.returncode == 0, out.stdout + out.stderr
+        assert "VERIFIED" in out.stdout
+
+    def test_a_rigged_winner_is_refused(self, record, tmp_path):
+        data = json.loads(record.read_text())
+        data["winners"][0] = 4242
+        rigged = tmp_path / "rigged.json"
+        rigged.write_text(json.dumps(data))
+
+        out = self._run(rigged)
+        assert out.returncode == 1, "a rigged record exited zero"
+        assert "NOT VERIFIED" in out.stdout
+        assert "recomputed" in out.stdout
+
+    def test_a_record_with_no_commitment_is_refused(self, record, tmp_path):
+        """It reproduces. That was never the question."""
+        data = json.loads(record.read_text())
+        data.pop("commitment")
+        path = tmp_path / "uncommitted.json"
+        path.write_text(json.dumps(data))
+
+        out = self._run(path)
+        assert out.returncode == 1
+        assert "nothing shows the draw was named before" in out.stdout
+
+    def test_a_key_the_caller_did_not_expect_is_refused(self, record, tmp_path):
+        out = self._run(record, "--public-key", "ab" * 32)
+        assert out.returncode == 1
+        assert "untrusted key" in out.stdout
+
+    def test_json_output_is_machine_readable(self, record):
+        out = self._run(record, "--json")
+        parsed = json.loads(out.stdout)
+        assert parsed["valid"] is True
+        assert {c["name"] for c in parsed["checks"]} == {"pulse", "draw"}
+
+    def test_it_says_when_the_sibling_list_is_missing(self, record):
+        """A passing check that rests on the receipt's own word must say so."""
+        out = self._run(record)
+        assert "receipt's own sequence number" in out.stdout
+
+    def test_a_missing_file_is_an_error_not_a_pass(self, tmp_path):
+        out = self._run(tmp_path / "nope.json")
+        assert out.returncode == 2, "a record that could not be read must not verify"
