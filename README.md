@@ -535,6 +535,16 @@ forged.
 beamline selftest -n 200000
 ```
 
+```bash
+beamline verify --draw record.json --public-key <key>
+```
+
+Checks a published draw record offline: the pulse is authentic under the key you name,
+the commitment predates it, the commitment covers this draw's tag *and shape*, and the
+result reproduces. Exits non-zero when it does not, so it can run in a script. If the
+record omits the round's commitment list, the output says the exclusivity check rested
+on the receipt's own sequence number rather than reporting an unqualified pass.
+
 ## Security notes
 
 ### Threat model

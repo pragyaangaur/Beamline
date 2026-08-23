@@ -76,6 +76,12 @@ async def about():
             "authoritative answer; the sequence number inside each receipt is a weaker "
             "offline fallback that misses a grinder whose first attempt happened to win.",
         ],
+        "verify_without_writing_code": (
+            "`beamline verify --draw record.json --public-key <key>` checks a published "
+            "record offline and exits non-zero if it does not hold up. Verification "
+            "should not require being a programmer; the person who most needs it is the "
+            "entrant who lost."
+        ),
         "best_uses": [
             "Provably-fair draws, raffles, lotteries, and giveaways "
             "(commit at /v1/beacon/commit, then derive at /v1/beacon/derive).",
