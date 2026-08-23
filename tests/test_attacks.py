@@ -655,9 +655,25 @@ class TestVerifyCommand:
         assert parsed["valid"] is True
         assert {c["name"] for c in parsed["checks"]} == {"pulse", "draw"}
 
-    def test_it_says_when_the_sibling_list_is_missing(self, record):
-        """A passing check that rests on the receipt's own word must say so."""
+    def test_the_published_record_carries_its_sibling_list(self, record):
+        """The example should not need the caveat it exists to demonstrate."""
+        data = json.loads(record.read_text())
+        assert data.get("sibling_commitments"), (
+            "the published record omits the round's commitment list, so verifying it "
+            "falls back on its own receipt's sequence number")
         out = self._run(record)
+        assert "only draw against that round" in out.stdout
+        assert "receipt's own sequence number" not in out.stdout
+
+    def test_it_says_when_the_sibling_list_is_missing(self, record, tmp_path):
+        """A passing check that rests on the receipt's own word must say so."""
+        data = json.loads(record.read_text())
+        data.pop("sibling_commitments", None)
+        path = tmp_path / "no_siblings.json"
+        path.write_text(json.dumps(data))
+
+        out = self._run(path)
+        assert out.returncode == 0, "removing the list must not fail an honest record"
         assert "receipt's own sequence number" in out.stdout
 
     def test_a_missing_file_is_an_error_not_a_pass(self, tmp_path):
