@@ -1,0 +1,477 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Beamline: predict a pulse</title>
+<meta name="description" content="Beamline claims a pulse cannot be predicted before it is published. Lodge a prediction against a future round and find out.">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='7' fill='%230B57D0'/><path d='M5.3 12.5 L16 21.5 L24 14.8' fill='none' stroke='%23fff' stroke-width='3.3' stroke-linecap='round' stroke-linejoin='round'/><path d='M0 -5 L4.7 3.3 L-4.7 3.3 Z' fill='%23fff' transform='translate(25.5 13.5) rotate(50)'/></svg>">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+  /* Same white / hyperlink-blue / black identity as the demo. */
+  :root{
+    --bg:#FFFFFF; --band:#F5F8FD; --sunk:#F6F8FC;
+    --ink:#0A0A0B; --ink-2:#3C4147; --ink-3:#666C73;
+    --line:#D9DEE5; --line-2:#EAEEF3;
+    --blue:#0B57D0; --blue-dark:#083C93; --blue-soft:#E8F0FE;
+    --ok:#0B57D0; --ok-soft:#E8F0FE;
+    --bad:#C5221F; --bad-soft:#FCE8E6;
+    --warn:#8A5300; --warn-soft:#FEF7E0;
+  }
+  *{box-sizing:border-box}
+  html{background:var(--bg)}
+  body{margin:0; background:var(--bg); color:var(--ink);
+       font-family:Inter,-apple-system,"Segoe UI",Helvetica,Arial,sans-serif;
+       font-size:17px; line-height:1.6; -webkit-font-smoothing:antialiased}
+  .mono,code,input,td,.num{font-family:"IBM Plex Mono",ui-monospace,Menlo,monospace}
+  a{color:var(--blue)} a:hover{color:var(--blue-dark)}
+  .shell{width:100%; max-width:1180px; margin:0 auto; padding:0 clamp(20px,4vw,56px)}
+
+  .topbar{position:sticky; top:0; z-index:20; background:var(--bg); border-bottom:1px solid var(--line)}
+  .bar{display:flex; align-items:center; gap:16px; min-height:76px; flex-wrap:wrap}
+  .brand{display:flex; align-items:center; gap:12px; text-decoration:none; color:var(--ink)}
+  .logo{width:38px; height:38px; flex:none; display:block}
+  .mark{font-weight:800; font-size:20px; letter-spacing:.14em; text-transform:uppercase}
+  nav{display:flex; gap:26px; margin-left:auto; font-weight:600; font-size:16px}
+
+  .hero{padding-top:clamp(40px,6vw,72px); padding-bottom:clamp(24px,3vw,36px)}
+  h1{font-size:clamp(38px,5.6vw,66px); line-height:1.03; font-weight:800;
+     letter-spacing:-.035em; margin:0 0 20px; max-width:20ch}
+  .sub{font-size:clamp(19px,1.7vw,23px); line-height:1.45; color:var(--ink-2);
+       margin:0; max-width:62ch; text-wrap:pretty}
+
+  .band{border-top:1px solid var(--line); background:var(--band); padding:clamp(28px,4vw,48px) 0}
+  .band.plain{background:var(--bg)}
+  h2{font-size:clamp(23px,2.4vw,30px); font-weight:700; letter-spacing:-.02em; margin:0 0 10px}
+  .lede{font-size:19px; color:var(--ink-2); margin:0 0 26px; max-width:76ch; text-wrap:pretty}
+
+  .card{background:var(--bg); border:1px solid var(--line); border-radius:12px;
+        padding:clamp(20px,2.6vw,30px)}
+  .card + .card{margin-top:18px}
+
+  /* ---- live status ---- */
+  .status{display:grid; grid-template-columns:repeat(auto-fit,minmax(190px,1fr)); gap:1px;
+          background:var(--line); border:1px solid var(--line); border-radius:12px;
+          overflow:hidden}
+  .stat{background:var(--bg); padding:18px 20px}
+  .stat .k{font-size:12px; letter-spacing:.07em; text-transform:uppercase;
+           color:var(--ink-3); font-weight:700}
+  .stat .v{font-size:29px; font-weight:700; letter-spacing:-.02em; margin-top:4px;
+           font-family:"IBM Plex Mono",ui-monospace,Menlo,monospace}
+  .stat .v.small{font-size:17px; font-weight:500; word-break:break-all; line-height:1.45}
+
+  .f{display:flex; flex-direction:column; gap:8px; min-width:0}
+  .f label{font-size:13px; letter-spacing:.06em; text-transform:uppercase;
+           color:var(--ink-3); font-weight:700}
+  .f .hint{font-size:14px; color:var(--ink-3); font-weight:400; text-transform:none;
+           letter-spacing:0; margin-top:-2px}
+  input{font-size:15px; color:var(--ink); background:var(--bg); border:1px solid var(--line);
+        border-radius:8px; padding:13px 14px; width:100%; min-width:0}
+  input:focus{outline:2px solid var(--blue); outline-offset:-1px; border-color:transparent}
+  input.bad{border-color:var(--bad); background:var(--bad-soft)}
+  .row{display:flex; gap:12px; flex-wrap:wrap; align-items:center; margin-top:22px}
+  button.go{font-family:inherit; font-size:17px; font-weight:600; background:var(--blue);
+            color:#fff; border:1px solid var(--blue); border-radius:8px; padding:14px 28px;
+            cursor:pointer}
+  button.go:hover:not(:disabled){background:var(--blue-dark); border-color:var(--blue-dark)}
+  button.go:disabled{opacity:.45; cursor:not-allowed}
+  button.chip{font-family:inherit; font-size:15px; font-weight:600; background:var(--bg);
+              color:var(--ink-2); border:1px solid var(--line); border-radius:8px;
+              padding:13px 20px; cursor:pointer}
+  button.chip:hover{border-color:var(--blue); color:var(--blue)}
+
+  .note{border-radius:10px; padding:15px 18px; font-size:16px; margin-top:18px;
+        border:1px solid var(--line)}
+  .note.ok{background:var(--ok-soft); border-color:#BBD2F5}
+  .note.bad{background:var(--bad-soft); border-color:#F3C9C6; color:#8C1D1A}
+  .note.warn{background:var(--warn-soft); border-color:#F2DFAE; color:var(--warn)}
+  .note[hidden]{display:none}
+
+  pre{background:var(--sunk); border:1px solid var(--line-2); border-radius:10px;
+      padding:16px 18px; overflow-x:auto; font-size:13.5px; line-height:1.6; margin:16px 0 0;
+      font-family:"IBM Plex Mono",ui-monospace,Menlo,monospace}
+
+  table{width:100%; border-collapse:collapse; font-size:15px; margin-top:8px}
+  th{text-align:left; font-size:12px; letter-spacing:.07em; text-transform:uppercase;
+     color:var(--ink-3); font-weight:700; padding:10px 12px; border-bottom:1px solid var(--line)}
+  td{padding:11px 12px; border-bottom:1px solid var(--line-2); vertical-align:top}
+  .wrapper{overflow-x:auto}
+  .tag{display:inline-block; font-size:12px; font-weight:700; letter-spacing:.05em;
+       text-transform:uppercase; padding:3px 9px; border-radius:999px}
+  .tag.miss{background:var(--sunk); color:var(--ink-3)}
+  .tag.pend{background:var(--warn-soft); color:var(--warn)}
+  .tag.win{background:var(--ok-soft); color:var(--blue-dark)}
+
+  .cols{display:grid; grid-template-columns:1fr 1fr; gap:26px}
+  @media (max-width:860px){ .cols{grid-template-columns:1fr} }
+  footer{border-top:1px solid var(--line); padding:34px 0 60px; color:var(--ink-3); font-size:15px}
+</style>
+</head>
+<body>
+
+<div class="topbar"><div class="shell"><div class="bar">
+  <a class="brand" href="./">
+    <svg class="logo" viewBox="0 0 32 32" aria-hidden="true"><rect width="32" height="32" rx="7" fill="#0B57D0"/><path d="M5.3 12.5 L16 21.5 L24 14.8" fill="none" stroke="#fff" stroke-width="3.3" stroke-linecap="round" stroke-linejoin="round"/><path d="M0 -5 L4.7 3.3 L-4.7 3.3 Z" fill="#fff" transform="translate(25.5 13.5) rotate(50)"/></svg>
+    <span class="mark">Beamline</span>
+  </a>
+  <nav>
+    <a href="./">Demo</a>
+    <a href="https://github.com/pragyaangaur/Beamline">Source</a>
+  </nav>
+</div></div></div>
+
+<div class="shell hero">
+  <h1>Predict the next pulse.</h1>
+  <p class="sub">Beamline publishes a signed random value every minute. It claims you
+  cannot know that value before it is published. Say what the next one will be, and if
+  you are right, <strong id="prize">the prize is yours</strong>.</p>
+</div>
+
+<div class="band">
+  <div class="shell">
+    <div class="status" id="status">
+      <div class="stat"><div class="k">Chain at round</div><div class="v" id="s-latest">&mdash;</div></div>
+      <div class="stat"><div class="k">Open round</div><div class="v" id="s-open">&mdash;</div></div>
+      <div class="stat"><div class="k">Closes in</div><div class="v" id="s-closes">&mdash;</div></div>
+      <div class="stat"><div class="k">Attempts so far</div><div class="v" id="s-tries">&mdash;</div></div>
+    </div>
+    <div class="note bad" id="offline" hidden></div>
+  </div>
+</div>
+
+<div class="band plain">
+  <div class="shell">
+    <h2>Make your prediction</h2>
+    <p class="lede">The target is the full 512-bit <code>output</code> the beacon will
+    publish &mdash; 128 hex characters, exactly as it appears in every pulse. Your
+    prediction is accepted only while its round is still in the future, and you get back
+    a receipt signed by the same key that signs the pulses.</p>
+
+    <div class="card">
+      <div class="f">
+        <label for="guess">Predicted output for round <span id="f-round">&mdash;</span></label>
+        <div class="hint">128 hex characters. Anything else is rejected before it is stored.</div>
+        <input id="guess" class="mono" spellcheck="false" autocomplete="off"
+               placeholder="0000000000000000000000000000000000000000000000000000000000000000&hellip;">
+      </div>
+      <div class="row" style="margin-top:18px">
+        <div class="f" style="flex:1; min-width:220px">
+          <label for="handle">Name for the scoreboard (optional)</label>
+          <input id="handle" maxlength="64" autocomplete="off" placeholder="anonymous">
+        </div>
+      </div>
+      <div class="row">
+        <button class="go" id="submit" disabled>Lodge prediction</button>
+        <button class="chip" id="randomise">Fill with a random guess</button>
+        <button class="chip" id="cheat">Try to cheat</button>
+      </div>
+      <div class="note bad" id="err" hidden></div>
+      <div class="note ok" id="ok" hidden></div>
+      <pre id="receipt" hidden></pre>
+    </div>
+
+    <div class="note warn" style="margin-top:22px">
+      <strong>&ldquo;Try to cheat&rdquo; is there to fail.</strong> It submits the
+      round that has just been published, together with that round&rsquo;s own output
+      &mdash; a guaranteed-correct answer. The server refuses it anyway, because it
+      arrived after the fact, and that refusal is the entire mechanism. A receipt that
+      could be issued once the answer was known would prove nothing to the person
+      holding it, which is you rather than us.
+    </div>
+  </div>
+</div>
+
+<div class="band">
+  <div class="shell">
+    <h2>What you are actually up against</h2>
+    <div class="cols">
+      <div>
+        <p>The output is 512 bits of SHA-512. There are about
+        <strong class="mono">1.34 &times; 10<sup>154</sup></strong> values it could take,
+        and the beacon draws from a quantum source, live space-weather readings, and the
+        kernel CSPRNG, mixed and run through a NIST SP 800-90A DRBG.</p>
+        <p>For scale, the observable universe holds roughly 10<sup>80</sup> atoms. One
+        guess per atom would cover essentially none of the space.</p>
+        <p>So: nobody is going to win this by guessing. That is the design, not a
+        loophole. A challenge you could win by luck would be a raffle, and it would tell
+        you nothing about whether the beacon is sound.</p>
+      </div>
+      <div>
+        <p><strong>Then why run it?</strong> Because the interesting attack was never
+        guessing. It is finding a flaw &mdash; a seeding bug, a predictable timestamp
+        component, a DRBG misuse, a source that turns out to be replayable. If one
+        exists, the prediction becomes cheap, and this page is where you would prove it.</p>
+        <p><strong>Losing attempts are not wasted.</strong> Every prediction is scored on
+        how many leading bits it shared with the real output. Against an honest beacon
+        that averages exactly 1.0 bit. The scoreboard below reports the running mean, so
+        the failures accumulate into a public test for bias that anyone can recompute
+        from the published pulses.</p>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="band plain">
+  <div class="shell">
+    <h2>Scoreboard</h2>
+    <p class="lede">Every attempt, including the ones that fail. A challenge where the
+    operator chooses which attempts to acknowledge is not a challenge.</p>
+    <div class="status">
+      <div class="stat"><div class="k">Predictions lodged</div><div class="v" id="b-total">&mdash;</div></div>
+      <div class="stat"><div class="k">Resolved</div><div class="v" id="b-resolved">&mdash;</div></div>
+      <div class="stat"><div class="k">Exact hits</div><div class="v" id="b-hits">&mdash;</div></div>
+      <div class="stat"><div class="k">Best prefix</div><div class="v" id="b-best">&mdash;</div></div>
+      <div class="stat"><div class="k">Mean prefix bits</div><div class="v" id="b-mean">&mdash;</div>
+        <div class="k" style="margin-top:6px; font-weight:500">expected 1.0</div></div>
+    </div>
+    <div class="note" id="b-bias" style="background:var(--sunk)"></div>
+    <div class="card" style="margin-top:18px">
+      <div class="wrapper"><table>
+        <thead><tr><th>Round</th><th>Who</th><th>Predicted</th><th>Shared bits</th><th>Result</th></tr></thead>
+        <tbody id="b-rows"><tr><td colspan="5" style="color:var(--ink-3)">Loading&hellip;</td></tr></tbody>
+      </table></div>
+    </div>
+  </div>
+</div>
+
+<div class="band">
+  <div class="shell">
+    <h2>The part where we argue against ourselves</h2>
+    <p class="lede">The operator of this beacon is also the person holding the prize.
+    That is a conflict, and pretending otherwise would be the least trustworthy thing on
+    this page.</p>
+    <div class="cols">
+      <div>
+        <p><strong>What protects you.</strong> Your receipt is signed by the same Ed25519
+        key that signs every pulse in the chain. Denying a winning receipt would mean
+        repudiating the key the entire chain hangs from &mdash; which destroys the product
+        far more thoroughly than paying out does. Resolution is string equality, run
+        automatically the moment your round lands. Nobody adjudicates anything.</p>
+      </div>
+      <div>
+        <p><strong>What does not.</strong> Beamline can emit a pulse, dislike it, and
+        publish the next one instead. It is a documented gap in the threat model, and it
+        applies here: an operator seeing a winning prediction could in principle withhold
+        that pulse. It is not invisible &mdash; the cadence is fixed, and a withheld round
+        leaves a hole that <code>/v1/beacon/verify-chain</code> reports to anyone who
+        asks. Watch the chain, not the promise.</p>
+      </div>
+    </div>
+    <p style="margin-top:20px">Four of the five breaks Beamline invites need no server at
+    all &mdash; forging a chain, passing an uncommitted draw, making the Python and
+    JavaScript verifiers disagree, or demonstrating statistical bias. See
+    <a href="https://github.com/pragyaangaur/Beamline#try-to-break-it">Try to break it</a>.
+    This page covers the one that needs a beacon that is actually running.</p>
+  </div>
+</div>
+
+<footer><div class="shell">
+  Beamline &mdash; <a href="./">demo</a> &middot;
+  <a href="https://github.com/pragyaangaur/Beamline">source</a> &middot;
+  <span id="api-note"></span>
+</div></footer>
+
+<script>
+// The live beacon. Overridable with ?api=... so the page can be pointed at a local
+// server during development without editing the file.
+const API = new URLSearchParams(location.search).get("api")
+         || "https://beamline.fly.dev";
+
+const $ = id => document.getElementById(id);
+const HEX128 = /^[0-9a-fA-F]{128}$/;
+
+let openRound = null, closesAt = null, latestOutput = null, latestRound = null, live = false;
+// Guards against the page DoSing the beacon. The countdown ticks ten times a second;
+// without an in-flight flag and a scheduled (rather than tick-driven) refresh, every
+// tick past a stale deadline fires another request -- which is exactly what happened
+// the first time this ran, several hundred requests deep before anyone noticed.
+let refreshing = false, refreshTimer = null, backoff = 1000;
+
+$("api-note").textContent = "beacon: " + API.replace(/^https?:\/\//, "");
+
+function offline(msg){
+  live = false;
+  $("offline").hidden = false;
+  $("offline").innerHTML = "<strong>The beacon is not reachable.</strong> " + msg;
+  $("submit").disabled = true;
+}
+
+async function refresh(){
+  if(refreshing) return;
+  refreshing = true;
+  clearTimeout(refreshTimer);
+  try{
+    const r = await fetch(API + "/v1/challenge/next", {cache:"no-store"});
+    if(!r.ok) throw new Error("HTTP " + r.status);
+    const d = await r.json();
+    live = true;
+    backoff = 1000;
+    $("offline").hidden = true;
+    openRound = d.open_round;
+    closesAt = d.closes_at_ms;
+    latestOutput = d.latest_output;
+    latestRound = d.latest_round;
+    $("s-latest").textContent = d.latest_round;
+    $("s-open").textContent = d.open_round;
+    $("f-round").textContent = d.open_round;
+    validate();
+    // One scheduled wake-up, just after this round is due to land. Not a poll: a
+    // beacon that publishes once a minute does not need to be asked more often, and
+    // a page that asks anyway is a load generator pointed at its own service.
+    schedule(Math.max(500, (closesAt - Date.now()) + 400));
+  }catch(e){
+    live = false;
+    closesAt = null;
+    $("s-closes").textContent = "—";
+    offline("It may be restarting, or not yet deployed. Nothing can be lodged until it "
+          + "is back &mdash; and a gap in the chain is itself something you can check.");
+    // Exponential backoff, capped. An outage must not turn every open tab into a
+    // retry storm against a service that is already struggling.
+    schedule(backoff);
+    backoff = Math.min(backoff * 2, 30000);
+  }finally{
+    refreshing = false;
+  }
+}
+
+function schedule(ms){
+  clearTimeout(refreshTimer);
+  refreshTimer = setTimeout(refresh, ms);
+}
+
+function tick(){
+  if(closesAt === null) return;
+  // Display only. Refreshing is scheduled, never driven from here.
+  const left = Math.max(0, (closesAt - Date.now()) / 1000);
+  $("s-closes").textContent = left.toFixed(1) + "s";
+}
+
+async function board(){
+  try{
+    const r = await fetch(API + "/v1/challenge/scoreboard?recent=25", {cache:"no-store"});
+    if(!r.ok) throw new Error("HTTP " + r.status);
+    const d = await r.json();
+    $("s-tries").textContent = d.predictions_total;
+    $("b-total").textContent = d.predictions_total;
+    $("b-resolved").textContent = d.predictions_resolved;
+    $("b-hits").textContent = d.exact_hits;
+    $("b-best").textContent = d.best_prefix_bits;
+    $("b-mean").textContent = d.mean_prefix_bits === null ? "—" : d.mean_prefix_bits.toFixed(3);
+    $("b-bias").textContent = d.bias_note;
+
+    const rows = d.recent.map(p => {
+      const state = !p.resolved ? '<span class="tag pend">pending</span>'
+                  : p.correct  ? '<span class="tag win">MATCH</span>'
+                               : '<span class="tag miss">miss</span>';
+      const who = p.handle ? escapeHtml(p.handle) : '<span style="color:var(--ink-3)">anonymous</span>';
+      return `<tr><td class="mono">${p.target_round}</td><td>${who}</td>`
+           + `<td class="mono" style="color:var(--ink-3)">${p.predicted_output.slice(0,16)}…</td>`
+           + `<td class="mono">${p.prefix_bits === null ? "—" : p.prefix_bits}</td>`
+           + `<td>${state}</td></tr>`;
+    });
+    $("b-rows").innerHTML = rows.length ? rows.join("")
+      : '<tr><td colspan="5" style="color:var(--ink-3)">No attempts yet. Be the first.</td></tr>';
+  }catch(e){ /* the offline banner already says it; do not double-report */ }
+}
+
+// Handles are published verbatim, so they are escaped rather than trusted. The API
+// caps the length; this stops the content.
+function escapeHtml(s){
+  return s.replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+}
+
+function validate(){
+  const v = $("guess").value.trim().replace(/^0x/i, "");
+  const good = HEX128.test(v);
+  $("guess").classList.toggle("bad", v.length > 0 && !good);
+  $("submit").disabled = !(good && live);
+  return good ? v.toLowerCase() : null;
+}
+
+$("guess").addEventListener("input", validate);
+
+$("randomise").addEventListener("click", () => {
+  const b = new Uint8Array(64);
+  crypto.getRandomValues(b);
+  $("guess").value = [...b].map(x => x.toString(16).padStart(2, "0")).join("");
+  validate();
+});
+
+// Deliberately doomed, and the point of the page. Submits the round that has just
+// been published, using its own published output -- a guaranteed "correct" answer that
+// the server must still refuse, because it arrived after the fact.
+$("cheat").addEventListener("click", async () => {
+  if(latestOutput === null) return;
+  $("guess").value = latestOutput;
+  validate();
+  await lodge(latestRound);
+});
+
+// `round` is passed only to demonstrate a refusal. A genuine submission omits it, so
+// the server pins the prediction to whatever the next round actually is at the moment
+// it arrives. Sending the round the page last saw introduces a race the challenger
+// loses: type a guess, cross a round boundary, and an honest attempt is rejected for
+// naming a round that has since been published.
+async function lodge(round){
+  const v = validate();
+  if(!v) return;
+  $("err").hidden = $("ok").hidden = $("receipt").hidden = true;
+  $("submit").disabled = true;
+  try{
+    const payload = {predicted_output:v, handle:$("handle").value.trim()};
+    if(round !== undefined) payload.target_round = round;
+    const r = await fetch(API + "/v1/challenge/predict", {
+      method:"POST",
+      headers:{"Content-Type":"application/json"},
+      body: JSON.stringify(payload),
+    });
+    const d = await r.json();
+    if(!r.ok){
+      $("err").hidden = false;
+      $("err").innerHTML = "<strong>Rejected.</strong> " + escapeHtml(d.detail || ("HTTP " + r.status));
+      return;
+    }
+    $("ok").hidden = false;
+    $("ok").innerHTML = "<strong>Lodged for round " + d.target_round + ".</strong> "
+      + "The chain stood at round " + d.received_after_round + " when this arrived, and "
+      + "that fact is inside the signature. Keep the receipt below — it is your claim, "
+      + "and it verifies offline against the beacon's public key.";
+    $("receipt").hidden = false;
+    $("receipt").textContent = JSON.stringify(d, null, 2);
+    board();
+  }catch(e){
+    $("err").hidden = false;
+    $("err").textContent = "Could not reach the beacon: " + e.message;
+  }finally{
+    validate();
+  }
+}
+
+$("submit").addEventListener("click", () => lodge());
+
+// The prize text is served by the API so the stated terms and the running code cannot
+// drift apart -- terms that live only in an announcement can be edited after somebody wins.
+fetch(API + "/v1/challenge/rules").then(r => r.json()).then(d => {
+  if(d.prize) $("prize").textContent = d.prize.replace(/\.$/, "") + " is yours";
+}).catch(() => {});
+
+// A backgrounded tab should not keep asking. Browsers throttle timers anyway, but
+// leaving it explicit means the behaviour does not depend on which browser is open.
+let boardTimer = setInterval(board, 15000);
+document.addEventListener("visibilitychange", () => {
+  if(document.hidden){
+    clearTimeout(refreshTimer);
+    clearInterval(boardTimer);
+  }else{
+    boardTimer = setInterval(board, 15000);
+    refresh(); board();
+  }
+});
+
+refresh(); board();
+setInterval(tick, 100);
+</script>
+</body>
+</html>

@@ -80,6 +80,21 @@ class Config:
     #: on looking exactly the same. Opt in for local development and CI.
     allow_unsigned_beacon: bool = _env_bool("ALLOW_UNSIGNED_BEACON")
 
+    # --- Challenge --------------------------------------------------------
+    #: The public "predict a pulse" registry. On by default: the claim that a pulse
+    #: cannot be predicted is the product's central one, and a deployment that serves
+    #: the claim while refusing attempts is asserting something it will not be held to.
+    challenge_enabled: bool = _env_bool("CHALLENGE_ENABLED", True)
+    #: Stated in /v1/challenge/rules so the terms live with the mechanism rather than
+    #: in a post that can be edited after somebody wins.
+    challenge_prize: str = _env("CHALLENGE_PRIZE", "One month of Claude Pro.")
+    #: Per origin, per round. Not a fairness measure -- grinding 512 bits is hopeless
+    #: either way -- but a bored script should not be able to fill the disk.
+    challenge_max_per_round: int = _env_int("CHALLENGE_MAX_PER_ROUND", 5)
+    challenge_max_rounds_ahead: int = _env_int("CHALLENGE_MAX_ROUNDS_AHEAD", 60)
+    challenge_burst: int = _env_int("CHALLENGE_BURST", 20)
+    challenge_refill: float = _env_float("CHALLENGE_REFILL", 0.2)
+
     # --- API --------------------------------------------------------------
     host: str = _env("HOST", "127.0.0.1")
     port: int = _env_int("PORT", 8080)
