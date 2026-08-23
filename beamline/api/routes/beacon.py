@@ -8,12 +8,24 @@ account. Charging for verification would defeat the product.
 from __future__ import annotations
 
 from fastapi import APIRouter, Depends, HTTPException, Query
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 from ... import generators as gen
 from ...entropy.beacon import (draw_spec, verify_chain, verify_commitment,
                                verify_pulse, verify_rotation)
 from ...service import SERVICE
+
+
+def resolve_kind(kind: str, unique: bool) -> str:
+    """Collapse the two ways of asking for distinct values into the one that is signed.
+
+    `unique=True` on integers and `kind="sample"` over a range are the same draw. Two
+    spellings are fine in a request and unacceptable in a commitment: the specification
+    is signed, and a verifier that has to guess which spelling was meant is a verifier
+    that can be argued with. So the alias is resolved here, once, and only the
+    canonical form ever reaches a receipt.
+    """
+    return "sample" if (unique and kind == "integers") else kind
 from ..deps import Principal, bill, require_key
 
 router = APIRouter(prefix="/v1/beacon", tags=["beacon"])
@@ -145,7 +157,12 @@ class CommitRequest(BaseModel):
                                 "`rounds_ahead` past the latest emitted round.")
     rounds_ahead: int = Field(1, ge=1, le=10_000,
                               description="Used when target_round is not given.")
+    model_config = ConfigDict(extra="forbid")
+
     kind: str = Field("integers", pattern="^(bytes|integers|shuffle|sample)$")
+    unique: bool = Field(
+        False, description="Draw distinct values. Equivalent to kind='sample' over the "
+                           "range, and stored as that, so a receipt has one spelling.")
     count: int = Field(1, ge=1, le=gen.MAX_COUNT)
     min: int = 0
     max: int = 100
@@ -166,10 +183,19 @@ async def commit(req: CommitRequest, p: Principal = Depends(require_key)):
     """
     if req.min > req.max:
         raise HTTPException(400, "min must be <= max")
+    kind = resolve_kind(req.kind, req.unique)
+    if kind == "sample":
+        population = len(req.items) if req.items is not None else req.max - req.min + 1
+        if req.count > population:
+            raise HTTPException(
+                400, f"cannot draw {req.count} distinct values from a population of "
+                     f"{population}. Committing to a draw that cannot be run would "
+                     f"leave you holding a signed receipt for an outcome nobody can "
+                     f"produce.")
     try:
         receipt = SERVICE.beacon.commit(
             req.tag, req.target_round, rounds_ahead=req.rounds_ahead, key_id=p.key_id,
-            kind=req.kind, count=req.count, minimum=req.min, maximum=req.max,
+            kind=kind, count=req.count, minimum=req.min, maximum=req.max,
             items=req.items)
     except ValueError as e:
         raise HTTPException(409, str(e)) from e
@@ -248,6 +274,8 @@ class DeriveRequest(BaseModel):
     response says so rather than leaving the reader to assume otherwise.
     """
 
+    model_config = ConfigDict(extra="forbid")
+
     round: int = Field(..., ge=1)
     tag: str = Field(..., min_length=1, max_length=256)
     commit_id: str | None = Field(
@@ -256,6 +284,8 @@ class DeriveRequest(BaseModel):
                     "carries proof the draw was named before this round existed; "
                     "omit it and the response says plainly that it does not.")
     kind: str = Field("integers", pattern="^(bytes|integers|shuffle|sample)$")
+    unique: bool = Field(
+        False, description="Draw distinct values. Equivalent to kind='sample'.")
     count: int = Field(1, ge=1, le=gen.MAX_COUNT)
     min: int = 0
     max: int = 100
@@ -264,6 +294,8 @@ class DeriveRequest(BaseModel):
 
 @router.post("/derive")
 async def derive(req: DeriveRequest, p: Principal = Depends(require_key)):
+    kind = resolve_kind(req.kind, req.unique)
+
     pulse_rec = SERVICE.beacon.get(req.round)
     if pulse_rec is None:
         raise HTTPException(
@@ -290,7 +322,7 @@ async def derive(req: DeriveRequest, p: Principal = Depends(require_key)):
         # The shape is signed too. A tag on its own does not pick a winner: the same
         # committed tag against the same pulse names one person at max=100 and a
         # different one at max=5000.
-        asked = draw_spec(req.kind, req.count, req.min, req.max, req.items)
+        asked = draw_spec(kind, req.count, req.min, req.max, req.items)
         if commitment_rec["draw"] != asked:
             differences = [f"{k}: committed {commitment_rec['draw'][k]!r}, "
                            f"requested {asked[k]!r}"
@@ -321,18 +353,23 @@ async def derive(req: DeriveRequest, p: Principal = Depends(require_key)):
         return out
 
     try:
-        if req.kind == "bytes":
+        if kind == "bytes":
             result = rand(req.count).hex()
-        elif req.kind == "integers":
+        elif kind == "integers":
             result = gen.integers(rand, req.count, req.min, req.max)
-        elif req.kind == "shuffle":
+        elif kind == "shuffle":
             if not req.items:
                 raise ValueError("shuffle requires 'items'")
             result = gen.shuffle(rand, req.items)
-        else:
-            if not req.items:
-                raise ValueError("sample requires 'items'")
+        elif req.items is not None:
             result = gen.sample(rand, req.items, req.count)
+        else:
+            # A raffle of N entrants by number: distinct values over the range, with no
+            # list to send. This used to be rejected outright, which meant the service
+            # would sign a commitment for a draw and then refuse to run it -- and the
+            # flagship case, picking winners out of a numbered entry list, could not
+            # go through the verifiable endpoint at all.
+            result = gen.integers(rand, req.count, req.min, req.max, unique=True)
     except ValueError as e:
         raise HTTPException(400, str(e)) from e
 
