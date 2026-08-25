@@ -10,15 +10,15 @@
 # log, and the signature on the pulse itself. None of them can be edited after the
 # fact, which is what makes the challenge adjudicable by a stranger.
 #
-# ONE-TIME SETUP -- the beacon cannot run without this:
+# ONE-TIME SETUP. The beacon cannot run without this:
 #
 #   1. Generate a signing key:            beamline beacon-key
 #   2. Repository Settings -> Secrets and variables -> Actions -> New secret
 #      Name:  BEAMLINE_BEACON_KEY
 #      Value: the hex private key from step 1
 #
-# Keep that key. Losing it does not break anything already published -- every pulse
-# stays verifiable against the public key baked into it -- but a new key starts a new
+# Keep that key. Losing it does not break anything already published (every pulse
+# stays verifiable against the public key baked into it), but a new key starts a new
 # chain from round 1, and the challenge starts over with it.
 
 name: beacon

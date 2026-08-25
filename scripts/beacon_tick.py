@@ -9,7 +9,7 @@ This script supplies the first. It runs from a GitHub Actions schedule, gathers 
 entropy, emits exactly one signed pulse, and appends it to `beacon/chain.json`. The
 second comes free from where it runs: the pulse arrives as a commit made by a public
 Actions run, timestamped by GitHub rather than by us. A prediction lodged as an issue
-is timestamped the same way. Neither clock is ours, which is the point -- the previous
+is timestamped the same way. Neither clock is ours, which is the point. The previous
 design had the operator's own server stamping "I received your guess at time T", and
 a challenger had no reason to believe it.
 
@@ -21,8 +21,8 @@ which is public and append-only, so the archive is the commit log.
 
 The chain restarts at round 1 if the signing key changes. That is deliberate. A key
 change mid-chain is a rotation, and an unendorsed rotation is exactly the forgery
-`verify_chain` exists to catch -- so rather than teach the live chain to wave one
-through, a new key starts a new chain that verifies cleanly from its own genesis.
+`verify_chain` exists to catch. Teaching the live chain to wave one through would
+undo that, so a new key starts a new chain that verifies cleanly from its own genesis.
 """
 
 from __future__ import annotations
@@ -49,7 +49,7 @@ WINDOW = 250
 def load_chain(public_key_hex: str) -> list[dict]:
     """Recover the chain this key is entitled to continue.
 
-    Returns an empty list -- a fresh genesis -- if the file is missing, empty, or
+    Returns an empty list (a fresh genesis) if the file is missing, empty, or
     signed by a different key. The key check is what stops a redeployed secret from
     silently grafting new pulses onto a chain nobody can verify end to end.
     """
@@ -102,7 +102,7 @@ async def tick(gather: float, period: int) -> dict:
             svc.db.insert_pulse(pulse)
 
         # Let the network sources land at least one sample each. Without this the
-        # pulse is honest but local-only, and its provenance block says so -- which
+        # pulse is honest but local-only, and its provenance block says so, which
         # would make the published chain look thinner than the service really is.
         await asyncio.sleep(gather)
 

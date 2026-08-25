@@ -145,7 +145,7 @@
   <div class="shell">
     <h2>Make your prediction</h2>
     <p class="lede">The target is the full 512-bit <code>output</code> the beacon will
-    publish &mdash; 128 hex characters, exactly as it appears in every pulse. Your
+    publish: 128 hex characters, exactly as it appears in every pulse. Your
     prediction is lodged as a GitHub issue, which stamps it with a time we do not
     control, and it is scored automatically against the next pulse to land.</p>
 
@@ -171,7 +171,7 @@
     <div class="note warn" style="margin-top:22px">
       <strong>&ldquo;Try to cheat&rdquo; is there to fail.</strong> It fills in the
       round that has just been published, together with that round&rsquo;s own output
-      &mdash; a guaranteed-correct answer. You can lodge it, and it still will not score,
+      which is a guaranteed-correct answer. You can lodge it, and it still will not score,
       because GitHub stamps your issue later than the commit that published the pulse.
       Nothing refuses you: the ordering simply is what it is, and it is recorded by a
       third party who does not care who wins.
@@ -209,10 +209,10 @@
         you nothing about whether the beacon is sound.</p>
       </div>
       <div>
-        <p><strong>Then why run it?</strong> Because the interesting attack was never
-        guessing. It is finding a flaw &mdash; a seeding bug, a predictable timestamp
-        component, a DRBG misuse, a source that turns out to be replayable. If one
-        exists, the prediction becomes cheap, and this page is where you would prove it.</p>
+        <p><strong>Then why run it?</strong> Because the interesting attack is finding a
+        flaw. A seeding bug, a predictable timestamp component, a DRBG misuse, a source
+        that turns out to be replayable. Guessing is not the route in. If a flaw exists,
+        the prediction becomes cheap, and this page is where you would prove it.</p>
         <p><strong>Losing attempts are not wasted.</strong> Every prediction is scored on
         how many leading bits it shared with the real output. Against an honest beacon
         that averages exactly 1.0 bit. The scoreboard below reports the running mean, so
@@ -254,8 +254,8 @@
     this page.</p>
     <div class="cols">
       <div>
-        <p><strong>What protects you.</strong> Not our good intentions &mdash; the fact
-        that we are not holding either clock. Your guess is an issue GitHub timestamps;
+        <p><strong>What protects you.</strong> We are not holding either clock. Our good
+        intentions do not come into it. Your guess is an issue GitHub timestamps;
         the pulse is a commit from a public Actions run, signed with the same Ed25519 key
         the whole chain hangs from. Deciding a winner is string equality between two
         records we cannot backdate, run automatically, in the open. Nobody adjudicates
@@ -266,7 +266,7 @@
         <p><strong>What does not.</strong> Beamline can emit a pulse, dislike it, and
         publish the next one instead. It is a documented gap in the threat model, and it
         applies here: an operator seeing a winning prediction could in principle withhold
-        that pulse. It is not invisible &mdash; a withheld round means a scheduled run
+        that pulse. It would not be invisible. A withheld round means a scheduled run
         with no commit behind it, and both the schedule and the run log are public. It is
         also the reason the prize is a subscription rather than a house: the incentive to
         cheat should stay smaller than the cost of being caught. Watch the chain, not the
@@ -283,15 +283,15 @@
 </div>
 
 <footer><div class="shell">
-  Beamline &mdash; <a href="./">demo</a> &middot;
+  Beamline &middot; <a href="./">demo</a> &middot;
   <a href="https://github.com/pragyaangaur/Beamline">source</a> &middot;
   <span id="api-note"></span>
 </div></footer>
 
 <script>
 // The beacon publishes as static files committed by a scheduled job, so this page has
-// no API to be down. That is not a compromise forced by hosting: the thing the
-// challenge has to prove is an *ordering* -- that a guess existed before a value did --
+// no API to be down. Hosting did not force that choice. The thing the
+// challenge has to prove is an *ordering*, that a guess existed before a value did,
 // and neither side of that comparison should be stamped by the person holding the
 // prize. Here both are stamped by GitHub. The guess is an issue with a `created_at`
 // nobody can backdate; the pulse is a commit from a public Actions run.
@@ -348,7 +348,7 @@ async function refresh(){
     validate();
   }catch(e){
     offline("The beacon may not have emitted its first pulse yet. Until it has, there "
-          + "is no chain to predict against &mdash; and a gap is itself something you "
+          + "is no chain to predict against, and a gap is itself something you "
           + "can check, in the repository's commit log.");
   }
 }
@@ -386,17 +386,18 @@ async function liveAttempts(){
 async function board(){
   // Asked for on its own, so a missing or unreadable scoreboard file cannot stop the
   // counter updating. It is the number a visitor watches after lodging a guess.
-  const live = liveAttempts().then(n => {
+  liveAttempts().then(n => {
     counted = true;
     $("s-tries").textContent = n;
   }).catch(() => { counted = false; });
 
   try{
     const d = await loadJSON("predictions.json");
-    // Resolved plus still-waiting: what the file can account for by itself. Used only
-    // when GitHub did not answer, so a rate limit shows a slightly stale number
-    // rather than a dash.
-    await live;
+    // Resolved plus still-waiting: what the file can account for by itself. Shown at
+    // once rather than waiting on GitHub, so a slow or rate-limited API leaves a
+    // slightly stale number on screen instead of a dash. The live count overwrites
+    // this whenever it lands, and `counted` stops it clobbering a fresher answer that
+    // arrived first.
     if(!counted) $("s-tries").textContent = (d.attempts ?? 0) + (d.pending ?? 0);
     $("b-total").textContent = d.attempts ?? 0;
     $("b-resolved").textContent = d.attempts ?? 0;
@@ -459,7 +460,7 @@ $("cheat").addEventListener("click", () => {
     "<strong>That is round " + latestRound + "'s own output, and it is already public.</strong> "
     + "You can absolutely open an issue with it. It will not be scored against round "
     + latestRound + ", because GitHub will stamp your issue later than the commit that "
-    + "published that pulse &mdash; so it goes to round " + (latestRound + 1) + " like "
+    + "published that pulse, so it goes to round " + (latestRound + 1) + " like "
     + "every other guess. Copying a published value is not the thing being claimed "
     + "impossible, and the ordering that says so is not ours to edit.";
 });
@@ -478,7 +479,7 @@ $("submit").addEventListener("click", () => {
   $("ok").innerHTML =
     "<strong>Opening GitHub with your prediction filled in.</strong> Submit the issue to "
     + "lodge it. The moment you do, your guess carries a <code>created_at</code> from "
-    + "GitHub &mdash; not from us &mdash; and the next pulse is scored against it "
+    + "GitHub rather than from us, and the next pulse is scored against it "
     + "automatically. You will get a comment with the verdict and how many leading bits "
     + "you shared.";
 });
