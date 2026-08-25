@@ -697,14 +697,19 @@ server as the pulses is checking only that the server agrees with itself.
 
 ## Licence
 
-[GNU Affero General Public License v3.0 or later](LICENSE).
+[PolyForm Noncommercial 1.0.0](LICENSE). Source-available, and not an open source
+licence: you may read it, run it, modify it and attack it, for any noncommercial
+purpose. Commercial use by anyone other than the copyright holder is not granted.
 
-Beamline asks people to check it rather than believe it, so the source has to stay
-readable by anyone who wants to attack it. AGPL keeps it that way even when the code is
-reached over a network: run a modified Beamline as a service and you owe your users the
-modifications. Running a public randomness beacon on a private fork of the verifier is
-the one thing this project cannot be relaxed about.
+The licence names research, experiment, testing, personal study and hobby projects as
+permitted purposes, and adds educational institutions, public research bodies and
+charities regardless of funding. Everything the challenge asks of you falls inside
+that. Clone it, run your own beacon, take the verifiers apart, publish what you find.
 
-The copyright is held solely by Pragyaan Gaur, and a copyright holder is not bound by
-the terms they publish under. Commercial licences on other terms are available, and any
-future commercial version of Beamline is unaffected by the choice above.
+The reason it is not MIT is narrow. Beamline is a service, and MIT would let anyone
+stand up a competing one built on this code. The reason it is not AGPL is that AGPL
+would still permit exactly that, provided they published their changes.
+
+The copyright is held solely by Pragyaan Gaur. A copyright holder is not bound by the
+terms they publish under, so commercial licences on other terms are available and any
+future commercial version of Beamline is unaffected.
