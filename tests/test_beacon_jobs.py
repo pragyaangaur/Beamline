@@ -244,3 +244,55 @@ def test_an_empty_or_unreadable_chain_is_an_error_not_a_pass(tmp_path):
     empty.write_text(json.dumps({"public_key": "kk", "pulses": []}))
     assert _verify(empty) == 2
     assert _verify(tmp_path / "does-not-exist.json") == 2
+
+
+# --- a tick must not lose a pulse it has already signed --------------------
+
+def test_a_shutdown_failure_does_not_discard_the_pulse(tmp_path, monkeypatch):
+    """Cleanup talks to the network, so it can fail after the pulse is signed.
+
+    A source having a bad day is exactly the one likely to raise on the way out, and
+    losing the tick to that would leave a stopped chain. A stopped chain and a
+    withheld round look identical from outside, which is the one failure mode with no
+    evidence in it.
+    """
+    import asyncio
+    import os
+
+    from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
+
+    saved = {k: os.environ.get(k) for k in ("BEAMLINE_BEACON_KEY", "BEAMLINE_DB")}
+    os.environ["BEAMLINE_BEACON_KEY"] = Ed25519PrivateKey.generate().private_bytes_raw().hex()
+    monkeypatch.setattr(tick, "CHAIN", tmp_path / "chain.json")
+
+    real_service = None
+
+    async def run():
+        nonlocal real_service
+        from beamline.service import BeamlineService
+
+        original = BeamlineService.stop
+
+        async def exploding_stop(self):
+            real_service = self
+            await original(self)
+            raise RuntimeError("a source blew up on the way out")
+
+        monkeypatch.setattr(BeamlineService, "stop", exploding_stop)
+        return await tick.tick(gather=0.1, period=600)
+
+    try:
+        bundle = asyncio.run(run())
+    finally:
+        for k, v in saved.items():
+            if v is None:
+                os.environ.pop(k, None)
+            else:
+                os.environ[k] = v
+
+    # The round number depends on whichever database this module's other tests left
+    # behind, because CONFIG freezes BEAMLINE_DB at import time. What matters is that
+    # a bundle came back at all, carrying the signed pulse the run had already emitted.
+    assert bundle["pulses"], "the emitted pulse was lost to the shutdown failure"
+    assert bundle["pulses"][-1]["round"] == bundle["latest_round"]
+    assert bundle["pulses"][-1]["signature"]
