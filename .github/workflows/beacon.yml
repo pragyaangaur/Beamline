@@ -25,10 +25,11 @@ name: beacon
 
 on:
   schedule:
-    # Every ten minutes. GitHub runs scheduled jobs late under load, sometimes by a
-    # lot, which is why the beacon does not declare a period it then fails to keep:
-    # `verify_chain` only enforces spacing when asked to, and the chain is honest
-    # about when each pulse actually landed rather than when it was due.
+    # A restart signal, not the cadence. GitHub runs scheduled jobs late under load,
+    # and on this repository a */10 schedule fired roughly every forty-five minutes.
+    # The job itself keeps the ten-minute rhythm, and asking often means the next run
+    # begins as soon as the current one ends. `verify_chain` only enforces spacing
+    # when asked to, so the chain stays honest about when each pulse actually landed.
     - cron: "*/10 * * * *"
   workflow_dispatch:
 
@@ -46,7 +47,7 @@ permissions:
 jobs:
   pulse:
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 60
     steps:
       - uses: actions/checkout@v4
 
@@ -57,34 +58,60 @@ jobs:
       - name: Install
         run: pip install -e .
 
-      - name: Emit a pulse
+      - name: Publish a pulse every ten minutes for the next fifty
         env:
           BEAMLINE_BEACON_KEY: ${{ secrets.BEAMLINE_BEACON_KEY }}
-        run: python scripts/beacon_tick.py --gather 25 --period 600
-
-      - name: Score predictions lodged before it
-        env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GITHUB_REPOSITORY: ${{ github.repository }}
-        run: python scripts/resolve_predictions.py
-
-      - name: Publish
         run: |
+          set -u
           git config user.name  "beamline-beacon"
           git config user.email "beacon@users.noreply.github.com"
-          git add beacon/
-          git diff --staged --quiet && echo "nothing to publish" && exit 0
-          round=$(python -c "import json;print(json.load(open('beacon/chain.json'))['latest_round'])")
-          # [skip ci] keeps the test suite from running on every pulse. The pulse
-          # changes no code, and 144 duplicate CI runs a day would bury the ones that
-          # matter.
-          git commit -m "beacon: round ${round} [skip ci]"
-          # Another tick may have landed while this one was gathering entropy.
-          for attempt in 1 2 3; do
-            git pull --rebase --autostash origin "${GITHUB_REF_NAME}" && \
-            git push origin "HEAD:${GITHUB_REF_NAME}" && exit 0
-            echo "push race on attempt ${attempt}; retrying"
-            sleep 5
+
+          publish () {
+            git add beacon/
+            if git diff --staged --quiet; then
+              echo "nothing to publish"
+              return 0
+            fi
+            round=$(python -c "import json;print(json.load(open('beacon/chain.json'))['latest_round'])")
+            # [skip ci] keeps the test suite off every pulse. The pulse changes no
+            # code, and duplicate green runs all day would bury the ones that matter.
+            git commit -m "beacon: round ${round} [skip ci]"
+            for attempt in 1 2 3; do
+              if git pull --rebase --autostash origin "${GITHUB_REF_NAME}" \
+                 && git push origin "HEAD:${GITHUB_REF_NAME}"; then
+                return 0
+              fi
+              echo "push race on attempt ${attempt}; retrying"
+              sleep 5
+            done
+            echo "could not publish round ${round} after three attempts" >&2
+            return 1
+          }
+
+          # GitHub honours a */10 schedule when it feels like it. The first four runs
+          # of this beacon fired roughly forty-five minutes apart, which left the page
+          # saying a pulse was due for most of an hour. So the schedule is treated as a
+          # restart signal and the cadence is kept here, by a loop that outlives any one
+          # trigger. Overlapping runs cannot collide: the concurrency group above
+          # serialises them, and GitHub keeps at most one queued, so the next run starts
+          # as this one ends.
+          deadline=$(( $(date +%s) + 3000 ))
+          while :; do
+            slot=$(( $(date +%s) + 600 ))
+
+            if python scripts/beacon_tick.py --gather 25 --period 600; then
+              # Scoring is allowed to fail without costing the pulse. The pulse is the
+              # published record; a prediction that goes unscored this round is picked
+              # up by the next run, because it stays open until it is resolved.
+              python scripts/resolve_predictions.py || echo "scoring failed" >&2
+              publish || echo "publishing failed" >&2
+            else
+              echo "tick failed; the chain is unchanged" >&2
+            fi
+
+            [ "$(date +%s)" -ge "${deadline}" ] && break
+            wait_for=$(( slot - $(date +%s) ))
+            [ "${wait_for}" -gt 0 ] && sleep "${wait_for}"
           done
-          echo "could not publish the pulse after three attempts" >&2
-          exit 1
