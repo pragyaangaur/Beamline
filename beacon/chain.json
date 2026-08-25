@@ -1,0 +1,80 @@
+{
+ "latest_round": 1,
+ "period_seconds": 600,
+ "public_key": "e17703e3755918e1421e2b1b15ddacaf59db0d54871db23ff503e94a9293e5ec",
+ "pulses": [
+  {
+   "local_value": "f7c0102016015489572123425b37d8a18c2d1d1a8d79c76a514a1cc24ad3aba3609ba34f610207f91a9170b608864cfc5b7bf5aae5f9690d74e1e7948b627f37",
+   "output": "cee84058fc82673896f636036d2d669febe115c84bc1aad054d0bab0d23ba04149f3d7eef32ec7d88ef4ee51c0b0571e407520e373762d2a46ebf4a5cc7c01af",
+   "period_seconds": 600,
+   "prev_output": "00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000",
+   "provenance": {
+    "anu_qrng": {
+     "at_ms": 1787674099350,
+     "bytes": 765,
+     "chars": 1024,
+     "digest": "ecd122919ce28e0ef0f8d4488080ea332947d74db9e8ce67d465c1ef7c7b893b",
+     "provider": "anu_public_endpoint"
+    },
+    "astro": {
+     "advanced": true,
+     "at_ms": 1787674077819,
+     "bytes": 871,
+     "digest": "0cc2f3103686aead7caed2048c1d8360ae6895fc7f1a922d6066c362a86f8bf1",
+     "feeds": {
+      "goes_xray": {
+       "latest_time_tag": "2026-08-25T16:04:00Z",
+       "rows": 6
+      },
+      "solar_wind_mag": {
+       "latest_time_tag": "2026-08-24T16:06:00",
+       "rows": 6
+      },
+      "solar_wind_plasma": {
+       "latest_time_tag": "2026-08-24T16:06:00",
+       "rows": 6
+      }
+     }
+    },
+    "local_os": {
+     "at_ms": 1787674097500,
+     "bytes": 64,
+     "digest": "9298e557bc51d0c6708ff640a0397b3e25621292e922fe82d948e17b87757d59",
+     "provider": "kernel getrandom(2)"
+    }
+   },
+   "public_key": "e17703e3755918e1421e2b1b15ddacaf59db0d54871db23ff503e94a9293e5ec",
+   "round": 1,
+   "signature": "f8df415593d260e50cff6b00a995fc81147cd3d9562140351638fef5acc987e91f8203244829089fd36c465c30e4f7ceb44f40da91ddb59a82588fb5bc32950d",
+   "timestamp_ms": 1787674102492,
+   "version": "beamline/pulse/v3"
+  }
+ ],
+ "sources": [
+  {
+   "last_error": null,
+   "name": "local_os",
+   "ok": true,
+   "public_data": false
+  },
+  {
+   "last_error": null,
+   "name": "anu_qrng",
+   "ok": false,
+   "public_data": false
+  },
+  {
+   "last_error": null,
+   "name": "anu_qrng",
+   "ok": true,
+   "public_data": false
+  },
+  {
+   "last_error": null,
+   "name": "astro",
+   "ok": true,
+   "public_data": true
+  }
+ ],
+ "window": 250
+}
