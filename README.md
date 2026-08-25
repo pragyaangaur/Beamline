@@ -31,6 +31,7 @@ beamline serve --port 8080
 - [Configuration](#configuration)
 - [Architecture](#architecture)
 - [Security notes](#security-notes)
+- [Licence](#licence)
 
 ## What it does
 
@@ -693,3 +694,17 @@ startup warning, which reaches neither the API client nor the entrant the beacon
 
 **Pin the public key out of band.** A verifier that fetches the signing key from the same
 server as the pulses is checking only that the server agrees with itself.
+
+## Licence
+
+[GNU Affero General Public License v3.0 or later](LICENSE).
+
+Beamline asks people to check it rather than believe it, so the source has to stay
+readable by anyone who wants to attack it. AGPL keeps it that way even when the code is
+reached over a network: run a modified Beamline as a service and you owe your users the
+modifications. Running a public randomness beacon on a private fork of the verifier is
+the one thing this project cannot be relaxed about.
+
+The copyright is held solely by Pragyaan Gaur, and a copyright holder is not bound by
+the terms they publish under. Commercial licences on other terms are available, and any
+future commercial version of Beamline is unaffected by the choice above.
