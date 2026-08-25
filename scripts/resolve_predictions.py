@@ -151,14 +151,16 @@ def main() -> None:
 
     board = load_board()
     scored = 0
+    pending = 0
 
     for issue in open_predictions(repo):
         call = adjudicate(issue, actual, emitted_ms)
         created_ms = call["created_ms"]
 
-        # Lodged after the answer was public. Not evidence of anything, so it is left
-        # open and waits for a round that does not exist yet.
+        # Lodged after the answer was public, so it carries no evidence about this
+        # round. It stays open and waits for the next one.
         if call["verdict"] == "late":
+            pending += 1
             continue
 
         if call["verdict"] == "unreadable":
@@ -240,6 +242,10 @@ def main() -> None:
     n = board["attempts"]
     board["updated_at_ms"] = int(time.time() * 1000)
     board["latest_round"] = round_no
+    # Guesses lodged for a round that has not landed. The page adds this to the
+    # resolved count so a challenger sees their own attempt appear straight away,
+    # without waiting up to ten minutes for the next pulse to score it.
+    board["pending"] = pending
     board["mean_prefix_bits"] = round(board["sum_prefix_bits"] / n, 4) if n else None
     board["expected_mean_prefix_bits"] = 1.0
 
