@@ -2,8 +2,8 @@
 
 The live challenge moved off a server we control and onto GitHub: a prediction is an
 issue, a pulse is a commit, and the ordering between them is stamped by a third party.
-That removed the operator's clock from the adjudication, which is the point -- but it
-also means the fairness of the whole challenge now rests on one comparison, made in
+That removed the operator's clock from the adjudication, which is the point. It also
+means the fairness of the whole challenge now rests on one comparison, made in
 `adjudicate`. These tests attack that comparison, and the chain-continuation logic that
 decides which pulses a given key is entitled to extend.
 """
@@ -170,9 +170,9 @@ def signed_chain():
     """Two genuinely signed pulses, built the way the beacon builds them.
 
     The environment is restored afterwards. `CONFIG` is frozen at import time, so a
-    leaked `BEAMLINE_DB` would not affect an already-imported module -- but it would
-    quietly reroute anything imported later, and a test suite whose result depends on
-    collection order is worse than a failing one.
+    leaked `BEAMLINE_DB` would not affect an already-imported module. It would quietly
+    reroute anything imported later, and a test suite whose result depends on collection
+    order is worse than a failing one.
     """
     import asyncio
     import os

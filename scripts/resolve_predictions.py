@@ -1,8 +1,8 @@
 """Score every prediction that was lodged before the latest pulse existed.
 
-A prediction is a GitHub issue. That is not a fallback for lacking a server -- it is a
-better answer to the only hard problem the challenge has, which is proving the order of
-two events to somebody who has no reason to trust us.
+A prediction is a GitHub issue. It answers the only hard problem the challenge has,
+which is proving the order of two events to somebody who has no reason to trust us.
+Lacking a server did not force this.
 
 The old design had Beamline's own API stamp each guess with "received at time T, chain
 standing at round N" and sign it. Every part of that is the operator's word: our clock,
@@ -14,8 +14,8 @@ Here, both sides of the comparison are timestamped by GitHub:
   * the guess is an issue, with a `created_at` we cannot backdate;
   * the pulse is a commit from a public Actions run, with a log we cannot rewrite.
 
-So the rule this script enforces -- score an issue against a pulse only if the issue
-was created before that pulse's timestamp -- is checkable by anyone, against records
+So the rule this script enforces, which is to score an issue against a pulse only if
+the issue was created before that pulse's timestamp, is checkable by anyone against records
 held by a third party who does not care who wins. An issue that arrives after a pulse
 is not scored against it; it stays open and waits for the next one, which is the same
 rule the API's `received_after_round` check enforced, moved somewhere it can be audited.
@@ -105,7 +105,7 @@ def adjudicate(issue: dict, actual: str, emitted_ms: int) -> dict:
     """Decide what a single issue gets, without touching the network.
 
     Returns a verdict of `"early"` (lodged before the pulse existed, so it is scored),
-    `"late"` (arrived once the answer was public -- left open for the next round), or
+    `"late"` (arrived once the answer was public, so it is left open for the next round), or
     `"unreadable"` (no 512-bit value in it).
 
     This is a pure function on purpose. It is the only place the challenge's fairness
@@ -167,7 +167,7 @@ def main() -> None:
             gh(f"/repos/{repo}/issues/{issue['number']}/comments", "POST", {
                 "body": (
                     "I could not find a prediction in this issue.\n\n"
-                    "A prediction is **exactly 128 hex characters** — the same shape as "
+                    "A prediction is **exactly 128 hex characters**, the same shape as "
                     "the `output` field of any pulse in "
                     "[`beacon/chain.json`](../blob/main/beacon/chain.json). "
                     "Open a new one and paste the full value.\n\n"
@@ -198,9 +198,9 @@ def main() -> None:
         verdict = (
             f"### 🎉 Exact match on round {round_no}\n\n"
             f"This is the outcome the challenge exists to be falsified by. "
-            f"All 512 bits agree. Please open a discussion — this needs a human.\n"
+            f"All 512 bits agree. Please open a discussion, this needs a human.\n"
             if exact else
-            f"### Round {round_no} is published — not a match\n\n"
+            f"### Round {round_no} is published, and it is not a match\n\n"
             f"You matched the first **{bits}** bit{'s' if bits != 1 else ''} "
             f"before diverging.\n"
         )
@@ -213,7 +213,7 @@ def main() -> None:
                 f"| Shared leading bits | **{bits}** |\n"
                 f"| Lodged | `{issue['created_at']}` |\n"
                 f"| Pulse emitted | `{time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime(emitted_ms / 1000))}` |\n\n"
-                f"Your guess was recorded before the pulse existed — both timestamps are "
+                f"Your guess was recorded before the pulse existed. Both timestamps are "
                 f"GitHub's, not ours, so the ordering does not depend on trusting anyone. "
                 f"Check the full pulse in "
                 f"[`beacon/chain.json`](../blob/main/beacon/chain.json) and verify its "
