@@ -31,6 +31,18 @@ on:
     # begins as soon as the current one ends. `verify_chain` only enforces spacing
     # when asked to, so the chain stays honest about when each pulse actually landed.
     - cron: "*/10 * * * *"
+
+  # A second way back to life that does not depend on the scheduler at all. If the
+  # cron is throttled hard enough to skip an entire loop, any push to main restarts
+  # the beacon within seconds. The beacon's own commits cannot cause a loop here:
+  # GitHub deliberately refuses to trigger workflows from pushes made with
+  # GITHUB_TOKEN, and `paths-ignore` means a pulse would not qualify even if that
+  # protection were ever lifted.
+  push:
+    branches: [main]
+    paths-ignore:
+      - "beacon/**"
+
   workflow_dispatch:
 
 # Two runs emitting at once would both claim the same round number and one would lose
