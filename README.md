@@ -102,8 +102,7 @@ being a programmer — the person who most needs it is the entrant who lost.
 
 The claim is narrow on purpose: **you cannot predict a pulse before it is published,
 and you cannot make a verifier accept a draw that was not fixed in advance.** If you can
-do either, the code is wrong and I want to know — and there is
-[a month of Claude Pro](#the-standing-challenge) in it for whoever shows me first.
+do either, the code is wrong and I want to know.
 
 What a break looks like, in order of how much it would matter:
 
@@ -136,16 +135,14 @@ that is the interesting case.
 beamline verify --draw record.json --public-key <key you recorded yourself>
 ```
 
-Four of those five need nothing but this repository — no luck, no beacon, no waiting.
-The first one needs a beacon that is actually running, which is what the next section is
-for. It is also the one you are least likely to win, and it is worth being clear about
-why: the target is 512 bits, so guessing is not a strategy. The other four are.
+Four of those five need nothing but this repository. The first one needs a beacon that
+is actually running, which is what the next section is for.
 
 ## The standing challenge
 
-**A month of Claude Pro to the first person who breaks any row of the table above.**
-One prize, first demonstration takes it, and the terms are in this file — in public
-version control, where an edit after somebody wins is itself a public record.
+**Predict a pulse before it is published and a month of Claude Pro is yours.** One
+prize, and the first person to do it takes it. The terms live in this file, under public
+version control, so an edit made after somebody wins is itself a public record.
 
 [**The challenge page**](https://pragyaangaur.github.io/Beamline/challenge.html) is the
 easy way in.
@@ -186,26 +183,25 @@ lives in one pure function, `adjudicate`, tested in
 Verify any pulse yourself rather than trusting the page:
 
 ```bash
-beamline verify --pulse beacon/chain.json
+beamline verify --chain beacon/chain.json
 ```
 
 ### What you are actually up against
 
-**The target is the full 512-bit output, not a small number.** A one-in-a-hundred guess
-gets won by luck roughly once every hundred tries, which would cost a prize and prove
-nothing about the beacon. The claim under test is unpredictability, so the target is the
-entire published value — about 1.34 × 10^154 possibilities, against roughly 10^80 atoms
-in the observable universe.
+**The target is the full 512-bit output.** A one-in-a-hundred guess gets won by luck
+roughly once every hundred tries, which would cost a prize and prove nothing about the
+beacon. The claim under test is unpredictability, so the target is the entire published
+value: about 1.34 x 10^154 possibilities, against roughly 10^80 atoms in the observable
+universe.
 
-Nobody is going to win by guessing, and saying so is not a hedge. It is why the other
-four rows of that table are worth far more of your time: they need no luck at all, and
-the same prize is on offer for any of them.
+Nobody is going to win this by guessing, and saying so is not a hedge. It is the design.
+A challenge you could win by luck would be a raffle, and it would tell you nothing about
+whether the beacon is sound.
 
 **Losing attempts are still the point.** Each is scored on how many leading bits it
 shared with the real output — a geometric(1/2) sample under the null hypothesis, mean
 1.0 bit. The scoreboard reports the running mean against that expectation, so failed
-predictions accumulate into a public bias test instead of into nothing. That is the
-fifth row of the table, made attackable by the people attempting the first.
+predictions accumulate into a public bias test instead of into nothing.
 
 **And the conflict of interest, stated plainly:** I hold the prize. What stops me
 quietly declining a winner is not my good intentions — it is that I hold neither clock,
