@@ -49,6 +49,10 @@
   /* ---- hero ---- */
   /* Vertical only: the shorthand would wipe out .shell's horizontal padding and
      push the headline against the edge of the screen. */
+  .cta{margin:22px 0 0; font-size:17px; line-height:1.55; color:var(--ink-2);
+       max-width:62ch; padding:14px 18px; border:1px solid var(--line);
+       border-left:3px solid var(--blue); border-radius:8px; background:var(--band)}
+  .cta a{font-weight:700}
   .hero{padding-top:clamp(40px,6vw,76px); padding-bottom:clamp(28px,4vw,44px)}
   h1{font-size:clamp(40px,6vw,72px); line-height:1.02; font-weight:800;
      letter-spacing:-.035em; margin:0 0 22px; max-width:22ch}
@@ -201,6 +205,9 @@
   <h1>Provably fair draws.</h1>
   <p class="sub">Every result comes from a public, signed pulse. Anyone can re-run it and
   get the same answer, with no account and nothing to install.</p>
+  <p class="cta"><a href="challenge.html">Predict the next pulse and win a month of
+  Claude Pro</a>. The beacon publishes one every ten minutes, and it claims you cannot
+  know the value before it does.</p>
 </div>
 
 <!-- ============ DRAW ============ -->
