@@ -33,6 +33,7 @@ import json
 import os
 import sys
 import tempfile
+import traceback
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -86,7 +87,15 @@ async def tick(gather: float, period: int) -> dict:
     from beamline.service import BeamlineService
 
     svc = BeamlineService()
-    await svc.start()
+    try:
+        await svc.start()
+    except Exception:
+        # Starting touches the network, so this is where a bad day at ANU or NOAA
+        # would land. Say so out loud: without the run log this failure is a red tick
+        # on a page nobody can read, and the beacon looks stopped for reasons nobody
+        # can name.
+        traceback.print_exc()
+        raise SystemExit("the service could not start, so no pulse was emitted")
 
     # The service emits on its own timer. This job emits exactly one pulse per run,
     # so that timer is cancelled: a background pulse landing mid-run would take the
@@ -110,28 +119,39 @@ async def tick(gather: float, period: int) -> dict:
         print(f"emitted round {pulse['round']}", file=sys.stderr)
 
         first = max(1, pulse["round"] - WINDOW + 1)
-        pulses = svc.db.pulse_range(first, WINDOW)
         health = svc.health()
+        bundle = {
+            "public_key": svc.beacon.public_key_hex,
+            "period_seconds": period,
+            "window": WINDOW,
+            "latest_round": pulse["round"],
+            # Which inputs were actually reachable on this run. Reported whether or
+            # not it flatters the beacon: a tick where the quantum source was down is
+            # still a valid pulse, and hiding that would misrepresent what went into
+            # it. The per-pulse `provenance` block is the authoritative record; this
+            # is a summary.
+            "sources": [
+                {"name": s["name"], "public_data": s["public_data"],
+                 "ok": s["consecutive_errors"] == 0 and bool(s["last_ok"]),
+                 "last_error": s["last_error"]}
+                for s in (health.get("sources") or [])
+            ],
+            "pulses": svc.db.pulse_range(first, WINDOW),
+        }
     finally:
-        await svc.stop()
+        # Shutting down talks to the network sources, and a source that is already
+        # misbehaving is exactly the one likely to raise on the way out. That must not
+        # discard a pulse this run has already emitted and signed: the bundle is built
+        # above, before anything here can fail, and a lost tick is the one outcome
+        # with no evidence in it. A stopped chain and a withheld round look identical.
+        try:
+            await svc.stop()
+        except Exception:
+            traceback.print_exc()
+            print("shutdown failed after the pulse was emitted; publishing anyway",
+                  file=sys.stderr)
 
-    return {
-        "public_key": svc.beacon.public_key_hex,
-        "period_seconds": period,
-        "window": WINDOW,
-        "latest_round": pulse["round"],
-        # Which inputs were actually reachable on this run. Reported whether or not it
-        # flatters the beacon: a tick where the quantum source was down is still a
-        # valid pulse, and hiding that would misrepresent what went into it. The
-        # per-pulse `provenance` block is the authoritative record; this is a summary.
-        "sources": [
-            {"name": s["name"], "public_data": s["public_data"],
-             "ok": s["consecutive_errors"] == 0 and bool(s["last_ok"]),
-             "last_error": s["last_error"]}
-            for s in (health.get("sources") or [])
-        ],
-        "pulses": pulses,
-    }
+    return bundle
 
 
 def main() -> None:
@@ -142,7 +162,14 @@ def main() -> None:
                     help="the cadence this beacon declares, in seconds")
     args = ap.parse_args()
 
-    bundle = asyncio.run(tick(args.gather, args.period))
+    try:
+        bundle = asyncio.run(tick(args.gather, args.period))
+    except SystemExit:
+        raise
+    except Exception:
+        traceback.print_exc()
+        raise SystemExit("the tick failed before a pulse was emitted; the chain is "
+                         "unchanged and the next run continues from where it left off")
     CHAIN.parent.mkdir(parents=True, exist_ok=True)
     CHAIN.write_text(json.dumps(bundle, indent=1, sort_keys=True) + "\n")
     print(f"wrote {CHAIN.relative_to(ROOT)} at round {bundle['latest_round']}",
