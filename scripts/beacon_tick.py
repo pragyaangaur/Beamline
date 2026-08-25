@@ -69,6 +69,48 @@ def load_chain(public_key_hex: str) -> list[dict]:
     return bundle.get("pulses") or []
 
 
+def _source_state(snap: dict) -> dict:
+    """Summarise one entropy source for the published chain, unambiguously.
+
+    Two sources answer to the name `anu_qrng`: the live ANU endpoint, and the local
+    archive of blocks the harvester has already collected. The first version of this
+    summary printed both under that one name with a bare `ok` flag, which made the
+    published record unreadable. An archive that was simply empty on a fresh runner
+    appeared as a failing quantum source, and there was no field that could tell you
+    which of the two you were looking at.
+
+    That matters more than a cosmetic naming problem. This file is the evidence behind
+    a public claim about where the randomness comes from, so a reader has to be able to
+    tell "the quantum endpoint answered" from "the local cache had nothing spare".
+
+    So each source now carries a role and a three-way state:
+
+      ok      -- produced a sample on this run
+      idle    -- produced nothing and reported no error. The archive does this
+                 whenever the harvester has not refilled it yet, which is normal on a
+                 cold runner and is not a fault.
+      failing -- raised, with `last_error` saying what.
+    """
+    archive = "archive_empty" in snap
+    if snap["consecutive_errors"]:
+        state = "failing"
+    elif snap["last_ok"]:
+        state = "ok"
+    else:
+        state = "idle"
+
+    out = {
+        "name": snap["name"],
+        "role": "archive" if archive else "live",
+        "public_data": snap["public_data"],
+        "state": state,
+        "last_error": snap["last_error"],
+    }
+    if archive:
+        out["blocks_remaining"] = snap.get("archive_blocks_remaining")
+    return out
+
+
 async def tick(gather: float, period: int) -> dict:
     """Gather entropy, emit one pulse, and return the whole bundle to be written."""
     key_hex = os.environ.get("BEAMLINE_BEACON_KEY", "").strip()
@@ -130,12 +172,7 @@ async def tick(gather: float, period: int) -> dict:
             # still a valid pulse, and hiding that would misrepresent what went into
             # it. The per-pulse `provenance` block is the authoritative record; this
             # is a summary.
-            "sources": [
-                {"name": s["name"], "public_data": s["public_data"],
-                 "ok": s["consecutive_errors"] == 0 and bool(s["last_ok"]),
-                 "last_error": s["last_error"]}
-                for s in (health.get("sources") or [])
-            ],
+            "sources": [_source_state(s) for s in (health.get("sources") or [])],
             "pulses": svc.db.pulse_range(first, WINDOW),
         }
     finally:
