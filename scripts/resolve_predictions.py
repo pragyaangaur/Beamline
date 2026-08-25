@@ -218,7 +218,7 @@ def main() -> None:
                     "I could not find a prediction in this issue.\n\n"
                     "A prediction is **exactly 128 hex characters**, the same shape as "
                     "the `output` field of any pulse in "
-                    "[`beacon/chain.json`](../blob/main/beacon/chain.json). "
+                    "[`beacon/chain.json`](https://github.com/" + repo + "/blob/main/beacon/chain.json). "
                     "Open a new one and paste the full value.\n\n"
                     "<sub>Posted automatically by the beacon.</sub>"
                 )})
@@ -265,7 +265,7 @@ def main() -> None:
                 f"Your guess was recorded before the pulse existed. Both timestamps are "
                 f"GitHub's, not ours, so the ordering does not depend on trusting anyone. "
                 f"Check the full pulse in "
-                f"[`beacon/chain.json`](../blob/main/beacon/chain.json) and verify its "
+                f"[`beacon/chain.json`](https://github.com/{repo}/blob/main/beacon/chain.json) and verify its "
                 f"signature with `beamline verify`.\n\n"
                 f"<sub>Scored automatically against round {round_no}. "
                 f"Expected shared prefix for an unbiased guess: 1 bit.</sub>"
