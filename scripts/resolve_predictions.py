@@ -55,6 +55,16 @@ HEX_128 = re.compile(r"\b(?:0x)?([0-9a-fA-F]{128})\b")
 #: Kept in the served file. The full history is in this file's git log.
 RECENT = 50
 
+#: Most predictions scored in a single run. Each one costs two API calls, a comment and
+#: a close, against a budget of 5000 an hour. Somebody scripting thousands of guesses
+#: would otherwise exhaust that and take the scoring down for everybody, which punishes
+#: the people who lodged an honest guess rather than the person flooding it.
+#:
+#: Anything over the cap keeps its place: issues are processed oldest first and the
+#: remainder stay open for the next run, so a backlog drains in order rather than
+#: being dropped.
+MAX_PER_RUN = 100
+
 
 def gh(path: str, method: str = "GET", body: dict | None = None) -> object:
     token = os.environ["GITHUB_TOKEN"]
@@ -203,6 +213,15 @@ def main() -> None:
     pending = 0
 
     for issue in open_predictions(repo):
+        if scored >= MAX_PER_RUN:
+            # Oldest first, so the ones left behind are the newest. They keep their
+            # target: an unscored issue is still open, and the next pulse is the next
+            # round it could name.
+            print(f"reached the {MAX_PER_RUN} per run cap; the rest wait for the next "
+                  f"pulse", file=sys.stderr)
+            pending += 1
+            continue
+
         call = adjudicate(issue, actual, emitted_ms)
         created_ms = call["created_ms"]
 

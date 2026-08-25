@@ -399,3 +399,12 @@ def test_every_label_the_challenge_writes_is_declared_for_creation():
     for name, (colour, description) in resolve.LABELS.items():
         assert len(colour) == 6 and int(colour, 16) >= 0, name
         assert description
+
+
+def test_the_per_run_cap_is_smaller_than_the_hourly_api_budget():
+    """Scoring costs two API calls each, against 5000 an hour.
+
+    Somebody scripting thousands of guesses must not be able to exhaust that, because
+    the people it takes scoring away from are the ones who lodged an honest guess.
+    """
+    assert resolve.MAX_PER_RUN * 2 < 5000
