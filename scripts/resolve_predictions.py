@@ -81,15 +81,62 @@ def iso_to_ms(stamp: str) -> int:
                .replace(tzinfo=timezone.utc).timestamp() * 1000)
 
 
+#: Created if absent on every run. The issue form declares `labels: [prediction]`, and
+#: GitHub silently drops a label that does not exist in the repository. That failure is
+#: invisible from the challenger's side: their issue is created, looks lodged, and is
+#: never seen again by anything that scores it.
+LABELS = {
+    LABEL: ("1D76DB", "A guess at a future pulse, awaiting the round it names"),
+    "resolved": ("0E8A16", "Scored against the pulse it predicted"),
+    "unreadable": ("BFD4F2", "No 512-bit value could be found in the issue"),
+}
+
+
+def ensure_labels(repo: str) -> None:
+    """Make sure the labels this challenge depends on exist. Idempotent."""
+    try:
+        existing = {l["name"] for l in gh(f"/repos/{repo}/labels?per_page=100")}
+    except Exception as e:
+        print(f"could not list labels ({e}); continuing", file=sys.stderr)
+        return
+    for name, (colour, description) in LABELS.items():
+        if name in existing:
+            continue
+        try:
+            gh(f"/repos/{repo}/labels", "POST",
+               {"name": name, "color": colour, "description": description})
+            print(f"created missing label {name!r}", file=sys.stderr)
+        except Exception as e:
+            print(f"could not create label {name!r}: {e}", file=sys.stderr)
+
+
+def is_prediction(issue: dict) -> bool:
+    """Is this issue a guess?
+
+    The label is the intended marker, and the title prefix is the backstop. An issue
+    opened while the label was missing from the repository carries no label and would
+    otherwise never be scored, through no fault of the person who opened it. The
+    template sets both, so either alone is enough to recognise one.
+
+    Deliberately not "any issue containing 128 hex characters": a bug report quoting a
+    pulse output would match that, and being auto-closed as a losing guess is a poor
+    reward for reporting a bug.
+    """
+    if LABEL in {l["name"] for l in issue.get("labels", [])}:
+        return True
+    return (issue.get("title") or "").strip().lower().startswith("prediction:")
+
+
 def open_predictions(repo: str) -> list[dict]:
     issues, page = [], 1
     while True:
-        batch = gh(f"/repos/{repo}/issues?state=open&labels={LABEL}"
+        batch = gh(f"/repos/{repo}/issues?state=open"
                    f"&per_page=100&page={page}&sort=created&direction=asc")
         if not batch:
             break
         # The issues endpoint returns pull requests too; they are not predictions.
-        issues += [i for i in batch if "pull_request" not in i]
+        issues += [i for i in batch
+                   if "pull_request" not in i and is_prediction(i)]
         if len(batch) < 100:
             break
         page += 1
@@ -143,6 +190,8 @@ def main() -> None:
         raise SystemExit("GITHUB_REPOSITORY and GITHUB_TOKEN are both required")
     if not CHAIN.exists():
         raise SystemExit("no beacon/chain.json yet; run scripts/beacon_tick.py first")
+
+    ensure_labels(repo)
 
     bundle = json.loads(CHAIN.read_text())
     pulse = bundle["pulses"][-1]
