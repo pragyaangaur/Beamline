@@ -124,9 +124,9 @@
 
 <div class="shell hero">
   <h1>Predict the next pulse.</h1>
-  <p class="sub">Beamline publishes a signed random value every minute. It claims you
-  cannot know that value before it is published. Say what the next one will be, and if
-  you are right, <strong id="prize">the prize is yours</strong>.</p>
+  <p class="sub">Beamline publishes a signed random value about every ten minutes. It
+  claims you cannot know that value before it is published. Say what the next one will
+  be, and if you are right, <strong id="prize">a month of Claude Pro is yours</strong>.</p>
 </div>
 
 <div class="band">
@@ -134,7 +134,7 @@
     <div class="status" id="status">
       <div class="stat"><div class="k">Chain at round</div><div class="v" id="s-latest">&mdash;</div></div>
       <div class="stat"><div class="k">Open round</div><div class="v" id="s-open">&mdash;</div></div>
-      <div class="stat"><div class="k">Closes in</div><div class="v" id="s-closes">&mdash;</div></div>
+      <div class="stat"><div class="k">Next pulse, roughly</div><div class="v" id="s-closes">&mdash;</div></div>
       <div class="stat"><div class="k">Attempts so far</div><div class="v" id="s-tries">&mdash;</div></div>
     </div>
     <div class="note bad" id="offline" hidden></div>
@@ -146,8 +146,8 @@
     <h2>Make your prediction</h2>
     <p class="lede">The target is the full 512-bit <code>output</code> the beacon will
     publish &mdash; 128 hex characters, exactly as it appears in every pulse. Your
-    prediction is accepted only while its round is still in the future, and you get back
-    a receipt signed by the same key that signs the pulses.</p>
+    prediction is lodged as a GitHub issue, which stamps it with a time we do not
+    control, and it is scored automatically against the next pulse to land.</p>
 
     <div class="card">
       <div class="f">
@@ -156,29 +156,39 @@
         <input id="guess" class="mono" spellcheck="false" autocomplete="off"
                placeholder="0000000000000000000000000000000000000000000000000000000000000000&hellip;">
       </div>
-      <div class="row" style="margin-top:18px">
-        <div class="f" style="flex:1; min-width:220px">
-          <label for="handle">Name for the scoreboard (optional)</label>
-          <input id="handle" maxlength="64" autocomplete="off" placeholder="anonymous">
-        </div>
-      </div>
       <div class="row">
-        <button class="go" id="submit" disabled>Lodge prediction</button>
+        <button class="go" id="submit" disabled>Lodge prediction on GitHub</button>
         <button class="chip" id="randomise">Fill with a random guess</button>
         <button class="chip" id="cheat">Try to cheat</button>
       </div>
+      <div class="hint" style="margin-top:12px">You need a GitHub account, and your
+      username is what appears on the scoreboard. That is the cost of having your guess
+      timestamped by somebody with no stake in the outcome.</div>
       <div class="note bad" id="err" hidden></div>
       <div class="note ok" id="ok" hidden></div>
-      <pre id="receipt" hidden></pre>
     </div>
 
     <div class="note warn" style="margin-top:22px">
-      <strong>&ldquo;Try to cheat&rdquo; is there to fail.</strong> It submits the
+      <strong>&ldquo;Try to cheat&rdquo; is there to fail.</strong> It fills in the
       round that has just been published, together with that round&rsquo;s own output
-      &mdash; a guaranteed-correct answer. The server refuses it anyway, because it
-      arrived after the fact, and that refusal is the entire mechanism. A receipt that
-      could be issued once the answer was known would prove nothing to the person
-      holding it, which is you rather than us.
+      &mdash; a guaranteed-correct answer. You can lodge it, and it still will not score,
+      because GitHub stamps your issue later than the commit that published the pulse.
+      Nothing refuses you: the ordering simply is what it is, and it is recorded by a
+      third party who does not care who wins.
+    </div>
+
+    <h2 style="margin-top:46px">The last one it published</h2>
+    <p class="lede">Round <span class="mono" id="f-shown">&mdash;</span> is the value you
+    would have had to name before this commit existed. Every field below is checkable:
+    the signature against the beacon&rsquo;s public key, and
+    <code>prev_output</code> against the round before it.</p>
+    <div class="card">
+      <div class="k" style="margin-bottom:8px">output</div>
+      <div class="mono" id="last-output" style="word-break:break-all; color:var(--ink-2)">&mdash;</div>
+      <details style="margin-top:16px">
+        <summary style="cursor:pointer">The whole pulse, as published</summary>
+        <pre id="pulse-json" style="margin-top:12px">&mdash;</pre>
+      </details>
     </div>
   </div>
 </div>
@@ -244,26 +254,32 @@
     this page.</p>
     <div class="cols">
       <div>
-        <p><strong>What protects you.</strong> Your receipt is signed by the same Ed25519
-        key that signs every pulse in the chain. Denying a winning receipt would mean
-        repudiating the key the entire chain hangs from &mdash; which destroys the product
-        far more thoroughly than paying out does. Resolution is string equality, run
-        automatically the moment your round lands. Nobody adjudicates anything.</p>
+        <p><strong>What protects you.</strong> Not our good intentions &mdash; the fact
+        that we are not holding either clock. Your guess is an issue GitHub timestamps;
+        the pulse is a commit from a public Actions run, signed with the same Ed25519 key
+        the whole chain hangs from. Deciding a winner is string equality between two
+        records we cannot backdate, run automatically, in the open. Nobody adjudicates
+        anything, and if we tried, the evidence would already be in someone else&rsquo;s
+        hands.</p>
       </div>
       <div>
         <p><strong>What does not.</strong> Beamline can emit a pulse, dislike it, and
         publish the next one instead. It is a documented gap in the threat model, and it
         applies here: an operator seeing a winning prediction could in principle withhold
-        that pulse. It is not invisible &mdash; the cadence is fixed, and a withheld round
-        leaves a hole that <code>/v1/beacon/verify-chain</code> reports to anyone who
-        asks. Watch the chain, not the promise.</p>
+        that pulse. It is not invisible &mdash; a withheld round means a scheduled run
+        with no commit behind it, and both the schedule and the run log are public. It is
+        also the reason the prize is a subscription rather than a house: the incentive to
+        cheat should stay smaller than the cost of being caught. Watch the chain, not the
+        promise.</p>
       </div>
     </div>
-    <p style="margin-top:20px">Four of the five breaks Beamline invites need no server at
-    all &mdash; forging a chain, passing an uncommitted draw, making the Python and
-    JavaScript verifiers disagree, or demonstrating statistical bias. See
-    <a href="https://github.com/pragyaangaur/Beamline#try-to-break-it">Try to break it</a>.
-    This page covers the one that needs a beacon that is actually running.</p>
+    <p style="margin-top:20px"><strong>Guessing is the least interesting way to win.</strong>
+    Beamline invites four other breaks, and every one of them is a better use of your
+    time: forging a chain that verifies, passing off an uncommitted draw, making the
+    Python and JavaScript verifiers disagree, or demonstrating statistical bias in the
+    published output. They need no luck, and the same prize is on offer for any of them.
+    See <a href="https://github.com/pragyaangaur/Beamline#try-to-break-it">Try to break
+    it</a> for what counts as a demonstration.</p>
   </div>
 </div>
 
@@ -274,119 +290,119 @@
 </div></footer>
 
 <script>
-// The live beacon. Overridable with ?api=... so the page can be pointed at a local
-// server during development without editing the file.
-const API = new URLSearchParams(location.search).get("api")
-         || "https://beamline.fly.dev";
+// The beacon publishes as static files committed by a scheduled job, so this page has
+// no API to be down. That is not a compromise forced by hosting: the thing the
+// challenge has to prove is an *ordering* -- that a guess existed before a value did --
+// and neither side of that comparison should be stamped by the person holding the
+// prize. Here both are stamped by GitHub. The guess is an issue with a `created_at`
+// nobody can backdate; the pulse is a commit from a public Actions run.
+//
+// ?data=... repoints the page at a local directory during development.
+const DATA = new URLSearchParams(location.search).get("data") || "./beacon";
+const REPO = "pragyaangaur/Beamline";
+const NEW_ISSUE = `https://github.com/${REPO}/issues/new`;
 
 const $ = id => document.getElementById(id);
 const HEX128 = /^[0-9a-fA-F]{128}$/;
 
-let openRound = null, closesAt = null, latestOutput = null, latestRound = null, live = false;
-// Guards against the page DoSing the beacon. The countdown ticks ten times a second;
-// without an in-flight flag and a scheduled (rather than tick-driven) refresh, every
-// tick past a stale deadline fires another request -- which is exactly what happened
-// the first time this ran, several hundred requests deep before anyone noticed.
-let refreshing = false, refreshTimer = null, backoff = 1000;
+let latestRound = null, latestOutput = null, dueAt = null, period = 600;
 
-$("api-note").textContent = "beacon: " + API.replace(/^https?:\/\//, "");
+$("api-note").textContent = "beacon: github actions, every ~10 min";
 
 function offline(msg){
-  live = false;
   $("offline").hidden = false;
-  $("offline").innerHTML = "<strong>The beacon is not reachable.</strong> " + msg;
-  $("submit").disabled = true;
+  $("offline").innerHTML = "<strong>The chain could not be loaded.</strong> " + msg;
+}
+
+// Handles come from GitHub logins and predicted values from issue bodies. Both are
+// other people's text rendered into this page, so both are escaped rather than trusted.
+function escapeHtml(s){
+  return String(s).replace(/[&<>"']/g,
+    c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+}
+
+async function loadJSON(name){
+  const r = await fetch(`${DATA}/${name}?t=${Date.now()}`, {cache:"no-store"});
+  if(!r.ok) throw new Error("HTTP " + r.status);
+  return r.json();
 }
 
 async function refresh(){
-  if(refreshing) return;
-  refreshing = true;
-  clearTimeout(refreshTimer);
   try{
-    const r = await fetch(API + "/v1/challenge/next", {cache:"no-store"});
-    if(!r.ok) throw new Error("HTTP " + r.status);
-    const d = await r.json();
-    live = true;
-    backoff = 1000;
-    $("offline").hidden = true;
-    openRound = d.open_round;
-    closesAt = d.closes_at_ms;
-    latestOutput = d.latest_output;
+    const d = await loadJSON("chain.json");
+    const last = d.pulses[d.pulses.length - 1];
     latestRound = d.latest_round;
-    $("s-latest").textContent = d.latest_round;
-    $("s-open").textContent = d.open_round;
-    $("f-round").textContent = d.open_round;
+    latestOutput = last.output;
+    period = d.period_seconds || 600;
+    dueAt = last.timestamp_ms + period * 1000;
+
+    $("offline").hidden = true;
+    $("s-latest").textContent = latestRound;
+    $("s-open").textContent = latestRound + 1;
+    $("f-round").textContent = latestRound + 1;
+    $("f-shown").textContent = latestRound;
+    $("last-output").textContent = latestOutput;
+    $("pulse-json").textContent = JSON.stringify(last, null, 1);
     validate();
-    // One scheduled wake-up, just after this round is due to land. Not a poll: a
-    // beacon that publishes once a minute does not need to be asked more often, and
-    // a page that asks anyway is a load generator pointed at its own service.
-    schedule(Math.max(500, (closesAt - Date.now()) + 400));
   }catch(e){
-    live = false;
-    closesAt = null;
-    $("s-closes").textContent = "—";
-    offline("It may be restarting, or not yet deployed. Nothing can be lodged until it "
-          + "is back &mdash; and a gap in the chain is itself something you can check.");
-    // Exponential backoff, capped. An outage must not turn every open tab into a
-    // retry storm against a service that is already struggling.
-    schedule(backoff);
-    backoff = Math.min(backoff * 2, 30000);
-  }finally{
-    refreshing = false;
+    offline("The beacon may not have emitted its first pulse yet. Until it has, there "
+          + "is no chain to predict against &mdash; and a gap is itself something you "
+          + "can check, in the repository's commit log.");
   }
 }
 
-function schedule(ms){
-  clearTimeout(refreshTimer);
-  refreshTimer = setTimeout(refresh, ms);
-}
-
+// Display only. GitHub runs scheduled jobs late under load, sometimes by several
+// minutes, so this is presented as an estimate rather than a countdown to a deadline
+// the beacon does not actually guarantee. Overstating the cadence would be the kind of
+// small dishonesty this whole project exists to avoid.
 function tick(){
-  if(closesAt === null) return;
-  // Display only. Refreshing is scheduled, never driven from here.
-  const left = Math.max(0, (closesAt - Date.now()) / 1000);
-  $("s-closes").textContent = left.toFixed(1) + "s";
+  if(dueAt === null) return;
+  const left = (dueAt - Date.now()) / 1000;
+  $("s-closes").textContent = left > 0
+    ? "~" + Math.floor(left / 60) + "m " + String(Math.floor(left % 60)).padStart(2,"0") + "s"
+    : "due now";
 }
 
 async function board(){
   try{
-    const r = await fetch(API + "/v1/challenge/scoreboard?recent=25", {cache:"no-store"});
-    if(!r.ok) throw new Error("HTTP " + r.status);
-    const d = await r.json();
-    $("s-tries").textContent = d.predictions_total;
-    $("b-total").textContent = d.predictions_total;
-    $("b-resolved").textContent = d.predictions_resolved;
-    $("b-hits").textContent = d.exact_hits;
-    $("b-best").textContent = d.best_prefix_bits;
-    $("b-mean").textContent = d.mean_prefix_bits === null ? "—" : d.mean_prefix_bits.toFixed(3);
-    $("b-bias").textContent = d.bias_note;
+    const d = await loadJSON("predictions.json");
+    $("s-tries").textContent = d.attempts ?? 0;
+    $("b-total").textContent = d.attempts ?? 0;
+    $("b-resolved").textContent = d.attempts ?? 0;
+    $("b-hits").textContent = d.exact_hits ?? 0;
+    $("b-best").textContent = d.best ? d.best.prefix_bits : "—";
+    $("b-mean").textContent = d.mean_prefix_bits == null
+      ? "—" : Number(d.mean_prefix_bits).toFixed(3);
 
-    const rows = d.recent.map(p => {
-      const state = !p.resolved ? '<span class="tag pend">pending</span>'
-                  : p.correct  ? '<span class="tag win">MATCH</span>'
-                               : '<span class="tag miss">miss</span>';
-      const who = p.handle ? escapeHtml(p.handle) : '<span style="color:var(--ink-3)">anonymous</span>';
-      return `<tr><td class="mono">${p.target_round}</td><td>${who}</td>`
-           + `<td class="mono" style="color:var(--ink-3)">${p.predicted_output.slice(0,16)}…</td>`
-           + `<td class="mono">${p.prefix_bits === null ? "—" : p.prefix_bits}</td>`
-           + `<td>${state}</td></tr>`;
+    const n = d.attempts || 0;
+    $("b-bias").textContent = n
+      ? `Over ${n} resolved prediction${n === 1 ? "" : "s"} the mean shared prefix is `
+        + `${Number(d.mean_prefix_bits).toFixed(4)} bits against an expectation of 1.0 `
+        + `under the null hypothesis that pulses are unpredictable. Sustained drift `
+        + `upward would be a finding; short-run wobble is not.`
+      : "Nothing has been resolved yet, so there is nothing to say about bias. This "
+        + "field will not flatter the beacon until it can.";
+
+    const rows = (d.recent || []).map(p => {
+      const state = p.correct ? '<span class="tag win">MATCH</span>'
+                              : '<span class="tag miss">miss</span>';
+      return `<tr><td class="mono">${p.round}</td>`
+           + `<td><a href="https://github.com/${REPO}/issues/${p.issue}">`
+           + `${escapeHtml(p.handle)}</a></td>`
+           + `<td class="mono" style="color:var(--ink-3)">${escapeHtml(p.predicted.slice(0,16))}…</td>`
+           + `<td class="mono">${p.prefix_bits}</td><td>${state}</td></tr>`;
     });
     $("b-rows").innerHTML = rows.length ? rows.join("")
       : '<tr><td colspan="5" style="color:var(--ink-3)">No attempts yet. Be the first.</td></tr>';
-  }catch(e){ /* the offline banner already says it; do not double-report */ }
-}
-
-// Handles are published verbatim, so they are escaped rather than trusted. The API
-// caps the length; this stops the content.
-function escapeHtml(s){
-  return s.replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+  }catch(e){ /* no predictions file until the first one is scored; not an error */ }
 }
 
 function validate(){
   const v = $("guess").value.trim().replace(/^0x/i, "");
   const good = HEX128.test(v);
   $("guess").classList.toggle("bad", v.length > 0 && !good);
-  $("submit").disabled = !(good && live);
+  $("submit").disabled = !good;
+  $("err").hidden = true;
   return good ? v.toLowerCase() : null;
 }
 
@@ -399,79 +415,54 @@ $("randomise").addEventListener("click", () => {
   validate();
 });
 
-// Deliberately doomed, and the point of the page. Submits the round that has just
-// been published, using its own published output -- a guaranteed "correct" answer that
-// the server must still refuse, because it arrived after the fact.
-$("cheat").addEventListener("click", async () => {
+// Deliberately doomed, and the point of the page. Fills in the round that has just
+// been published, using that round's own output -- a guaranteed-correct answer that
+// still cannot be scored, because the issue recording it would be stamped after the
+// pulse it names. The refusal is not a rule we apply; it is a fact about the clock.
+$("cheat").addEventListener("click", () => {
   if(latestOutput === null) return;
   $("guess").value = latestOutput;
   validate();
-  await lodge(latestRound);
+  $("err").hidden = false;
+  $("err").innerHTML =
+    "<strong>That is round " + latestRound + "'s own output, and it is already public.</strong> "
+    + "You can absolutely open an issue with it. It will not be scored against round "
+    + latestRound + ", because GitHub will stamp your issue later than the commit that "
+    + "published that pulse &mdash; so it goes to round " + (latestRound + 1) + " like "
+    + "every other guess. Copying a published value is not the thing being claimed "
+    + "impossible, and the ordering that says so is not ours to edit.";
 });
 
-// `round` is passed only to demonstrate a refusal. A genuine submission omits it, so
-// the server pins the prediction to whatever the next round actually is at the moment
-// it arrives. Sending the round the page last saw introduces a race the challenger
-// loses: type a guess, cross a round boundary, and an honest attempt is rejected for
-// naming a round that has since been published.
-async function lodge(round){
+// Hands the guess to GitHub's issue form. The page deliberately does not POST anywhere:
+// a submission that went to our server first would put our clock back in the middle of
+// the one comparison that has to be independent of us.
+$("submit").addEventListener("click", () => {
   const v = validate();
   if(!v) return;
-  $("err").hidden = $("ok").hidden = $("receipt").hidden = true;
-  $("submit").disabled = true;
-  try{
-    const payload = {predicted_output:v, handle:$("handle").value.trim()};
-    if(round !== undefined) payload.target_round = round;
-    const r = await fetch(API + "/v1/challenge/predict", {
-      method:"POST",
-      headers:{"Content-Type":"application/json"},
-      body: JSON.stringify(payload),
-    });
-    const d = await r.json();
-    if(!r.ok){
-      $("err").hidden = false;
-      $("err").innerHTML = "<strong>Rejected.</strong> " + escapeHtml(d.detail || ("HTTP " + r.status));
-      return;
-    }
-    $("ok").hidden = false;
-    $("ok").innerHTML = "<strong>Lodged for round " + d.target_round + ".</strong> "
-      + "The chain stood at round " + d.received_after_round + " when this arrived, and "
-      + "that fact is inside the signature. Keep the receipt below — it is your claim, "
-      + "and it verifies offline against the beacon's public key.";
-    $("receipt").hidden = false;
-    $("receipt").textContent = JSON.stringify(d, null, 2);
-    board();
-  }catch(e){
-    $("err").hidden = false;
-    $("err").textContent = "Could not reach the beacon: " + e.message;
-  }finally{
-    validate();
-  }
-}
-
-$("submit").addEventListener("click", () => lodge());
-
-// The prize text is served by the API so the stated terms and the running code cannot
-// drift apart -- terms that live only in an announcement can be edited after somebody wins.
-fetch(API + "/v1/challenge/rules").then(r => r.json()).then(d => {
-  if(d.prize) $("prize").textContent = d.prize.replace(/\.$/, "") + " is yours";
-}).catch(() => {});
-
-// A backgrounded tab should not keep asking. Browsers throttle timers anyway, but
-// leaving it explicit means the behaviour does not depend on which browser is open.
-let boardTimer = setInterval(board, 15000);
-document.addEventListener("visibilitychange", () => {
-  if(document.hidden){
-    clearTimeout(refreshTimer);
-    clearInterval(boardTimer);
-  }else{
-    boardTimer = setInterval(board, 15000);
-    refresh(); board();
-  }
+  const url = `${NEW_ISSUE}?template=prediction.yml`
+            + `&title=${encodeURIComponent("prediction: round " + (latestRound + 1))}`
+            + `&prediction=${encodeURIComponent(v)}`;
+  window.open(url, "_blank", "noopener");
+  $("ok").hidden = false;
+  $("ok").innerHTML =
+    "<strong>Opening GitHub with your prediction filled in.</strong> Submit the issue to "
+    + "lodge it. The moment you do, your guess carries a <code>created_at</code> from "
+    + "GitHub &mdash; not from us &mdash; and the next pulse is scored against it "
+    + "automatically. You will get a comment with the verdict and how many leading bits "
+    + "you shared.";
 });
 
-refresh(); board();
-setInterval(tick, 100);
+// A backgrounded tab should not keep polling files it is not showing.
+let timer = null;
+function start(){ stop(); timer = setInterval(() => { refresh(); board(); }, 60000); }
+function stop(){ if(timer) clearInterval(timer); timer = null; }
+document.addEventListener("visibilitychange", () => {
+  if(document.hidden) stop();
+  else { refresh(); board(); start(); }
+});
+
+refresh(); board(); start();
+setInterval(tick, 500);
 </script>
 </body>
 </html>

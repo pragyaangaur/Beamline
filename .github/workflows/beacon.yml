@@ -1,0 +1,90 @@
+# The live beacon.
+#
+# Beamline's claim is that nobody can predict a pulse before it is published. A claim
+# like that needs a chain that keeps growing in public, and an ordering between "you
+# guessed" and "the value existed" that we cannot quietly reverse. This workflow is
+# both: it emits one signed pulse per run, and it runs somewhere whose clock and logs
+# belong to GitHub rather than to us.
+#
+# Every run leaves three public artefacts an attacker can audit: the commit, the run
+# log, and the signature on the pulse itself. None of them can be edited after the
+# fact, which is what makes the challenge adjudicable by a stranger.
+#
+# ONE-TIME SETUP -- the beacon cannot run without this:
+#
+#   1. Generate a signing key:            beamline beacon-key
+#   2. Repository Settings -> Secrets and variables -> Actions -> New secret
+#      Name:  BEAMLINE_BEACON_KEY
+#      Value: the hex private key from step 1
+#
+# Keep that key. Losing it does not break anything already published -- every pulse
+# stays verifiable against the public key baked into it -- but a new key starts a new
+# chain from round 1, and the challenge starts over with it.
+
+name: beacon
+
+on:
+  schedule:
+    # Every ten minutes. GitHub runs scheduled jobs late under load, sometimes by a
+    # lot, which is why the beacon does not declare a period it then fails to keep:
+    # `verify_chain` only enforces spacing when asked to, and the chain is honest
+    # about when each pulse actually landed rather than when it was due.
+    - cron: "*/10 * * * *"
+  workflow_dispatch:
+
+# Two runs emitting at once would both claim the same round number and one would lose
+# its push. Queue them instead of cancelling: a cancelled tick is a missing round, and
+# a missing round is exactly what `verify-chain` reports as a hole to everybody.
+concurrency:
+  group: beacon
+  cancel-in-progress: false
+
+permissions:
+  contents: write   # to commit the pulse
+  issues: write     # to score and close predictions
+
+jobs:
+  pulse:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
+      - name: Install
+        run: pip install -e .
+
+      - name: Emit a pulse
+        env:
+          BEAMLINE_BEACON_KEY: ${{ secrets.BEAMLINE_BEACON_KEY }}
+        run: python scripts/beacon_tick.py --gather 25 --period 600
+
+      - name: Score predictions lodged before it
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+        run: python scripts/resolve_predictions.py
+
+      - name: Publish
+        run: |
+          git config user.name  "beamline-beacon"
+          git config user.email "beacon@users.noreply.github.com"
+          git add beacon/
+          git diff --staged --quiet && echo "nothing to publish" && exit 0
+          round=$(python -c "import json;print(json.load(open('beacon/chain.json'))['latest_round'])")
+          # [skip ci] keeps the test suite from running on every pulse. The pulse
+          # changes no code, and 144 duplicate CI runs a day would bury the ones that
+          # matter.
+          git commit -m "beacon: round ${round} [skip ci]"
+          # Another tick may have landed while this one was gathering entropy.
+          for attempt in 1 2 3; do
+            git pull --rebase --autostash origin "${GITHUB_REF_NAME}" && \
+            git push origin "HEAD:${GITHUB_REF_NAME}" && exit 0
+            echo "push race on attempt ${attempt}; retrying"
+            sleep 5
+          done
+          echo "could not publish the pulse after three attempts" >&2
+          exit 1

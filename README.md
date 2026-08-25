@@ -102,7 +102,8 @@ being a programmer — the person who most needs it is the entrant who lost.
 
 The claim is narrow on purpose: **you cannot predict a pulse before it is published,
 and you cannot make a verifier accept a draw that was not fixed in advance.** If you can
-do either, the code is wrong and I want to know.
+do either, the code is wrong and I want to know — and there is
+[a month of Claude Pro](#the-standing-challenge) in it for whoever shows me first.
 
 What a break looks like, in order of how much it would matter:
 
@@ -135,63 +136,99 @@ that is the interesting case.
 beamline verify --draw record.json --public-key <key you recorded yourself>
 ```
 
-Four of those five need nothing but this repository. The first one needs a beacon that
-is actually running, which is what the next section is for.
+Four of those five need nothing but this repository — no luck, no beacon, no waiting.
+The first one needs a beacon that is actually running, which is what the next section is
+for. It is also the one you are least likely to win, and it is worth being clear about
+why: the target is 512 bits, so guessing is not a strategy. The other four are.
 
 ## The standing challenge
 
-**Predict a pulse before it is published and the prize is yours.** The terms live at
-[`/v1/challenge/rules`](https://beamline.fly.dev/v1/challenge/rules) rather than in a
-post somewhere, so they cannot be edited after somebody wins.
+**A month of Claude Pro to the first person who breaks any row of the table above.**
+One prize, first demonstration takes it, and the terms are in this file — in public
+version control, where an edit after somebody wins is itself a public record.
 
 [**The challenge page**](https://pragyaangaur.github.io/Beamline/challenge.html) is the
-easy way in. Under it:
+easy way in.
+
+### How a prediction is timestamped, and why not by me
+
+A prediction is a [GitHub issue](../../issues/new?template=prediction.yml). That is not
+a shortcut around running a server — it is the answer to the only hard problem the
+challenge has.
+
+The claim under test is an *ordering*: that your guess existed before the value did.
+Whoever timestamps both sides of that comparison decides who wins. It should not be me,
+and until recently it was: predictions went to an API I ran, which stamped them with my
+clock, my ordering, and my option to lose an inconvenient one. A challenger who won
+would have been appealing to the honesty of the person the win embarrasses.
+
+So both sides moved to records held by somebody with no stake:
+
+| | Stamped by | Public artefact |
+|---|---|---|
+| Your prediction | GitHub, on issue creation | the issue's `created_at` |
+| The pulse | GitHub Actions, on commit | the commit, and the run log |
+
+The rule is then mechanical, and you can audit it: an issue is scored against a pulse
+only if it was created before that pulse's timestamp. An issue that arrives afterwards
+is not refused — it simply waits for the next round, because the ordering is a fact
+about two clocks rather than a decision anyone makes. Resolution is string equality,
+and every input to it is public.
+
+The beacon runs from [`.github/workflows/beacon.yml`](.github/workflows/beacon.yml),
+emitting one signed pulse roughly every ten minutes into
+[`beacon/chain.json`](beacon/chain.json). That file holds a rolling window; the full
+history is its git log, which is append-only and public. Scoring is
+[`scripts/resolve_predictions.py`](scripts/resolve_predictions.py), and the rule above
+lives in one pure function, `adjudicate`, tested in
+[`tests/test_beacon_jobs.py`](tests/test_beacon_jobs.py).
+
+Verify any pulse yourself rather than trusting the page:
 
 ```bash
-curl -s https://beamline.fly.dev/v1/challenge/next
+beamline verify --pulse beacon/chain.json
 ```
 
-```bash
-curl -s -X POST https://beamline.fly.dev/v1/challenge/predict \
-  -H "Content-Type: application/json" \
-  -d '{"predicted_output":"<128 hex characters>","handle":"you"}'
-```
-
-You get back a receipt signed with the same Ed25519 key that signs every pulse,
-recording the round the chain had reached when your prediction arrived. Check it
-yourself rather than trusting the response:
-
-```python
-from beamline.challenge import verify_prediction
-
-ok, why = verify_prediction(receipt, public_key_hex)
-```
-
-The server refuses any prediction whose round has already been published, and that
-refusal is the whole mechanism — a receipt that could be issued after the fact would be
-worthless to the person holding it. Resolution runs automatically the moment your round
-lands; `GET /v1/challenge/round/{n}` lists every attempt against a round, and
-`GET /v1/challenge/scoreboard` gives the running totals.
+### What you are actually up against
 
 **The target is the full 512-bit output, not a small number.** A one-in-a-hundred guess
 gets won by luck roughly once every hundred tries, which would cost a prize and prove
 nothing about the beacon. The claim under test is unpredictability, so the target is the
-entire published value.
+entire published value — about 1.34 × 10^154 possibilities, against roughly 10^80 atoms
+in the observable universe.
 
-**Losing attempts are the point.** Each is scored on how many leading bits it shared
-with the real output — a geometric(1/2) sample under the null hypothesis, mean 1.0 bit.
-The scoreboard reports the running mean against that expectation, so failed predictions
-accumulate into a public bias test instead of into nothing. That is the fifth break on
-the list above, made attackable by the people attempting the first.
+Nobody is going to win by guessing, and saying so is not a hedge. It is why the other
+four rows of that table are worth far more of your time: they need no luck at all, and
+the same prize is on offer for any of them.
 
-**And the conflict of interest, stated plainly:** the operator holds the prize. Denying a
-winning receipt would mean repudiating the signing key the entire chain depends on, which
-costs far more than paying out — but Beamline can still withhold a pulse it dislikes, as
-the [threat model](#threat-model) says. A withheld round leaves a hole that
-`GET /v1/beacon/verify-chain` reports. Watch the chain, not the promise.
+**Losing attempts are still the point.** Each is scored on how many leading bits it
+shared with the real output — a geometric(1/2) sample under the null hypothesis, mean
+1.0 bit. The scoreboard reports the running mean against that expectation, so failed
+predictions accumulate into a public bias test instead of into nothing. That is the
+fifth row of the table, made attackable by the people attempting the first.
 
-Running your own: see [DEPLOY.md](DEPLOY.md). It is one always-on machine, and it must
-stay one — the chain is single-writer.
+**And the conflict of interest, stated plainly:** I hold the prize. What stops me
+quietly declining a winner is not my good intentions — it is that I hold neither clock,
+and the evidence would already be in GitHub's hands and yours. I can still withhold a
+pulse I dislike, as the [threat model](#threat-model) says; that leaves a scheduled run
+with no commit behind it, and both the schedule and the run log are public. It is also
+why the prize is a subscription and not a house: the incentive to cheat should stay
+smaller than the cost of being caught. Watch the chain, not the promise.
+
+### Running the beacon yourself
+
+The scheduled job needs one secret, and publishes nothing without it:
+
+```bash
+beamline beacon-key    # then add the hex as the BEAMLINE_BEACON_KEY Actions secret
+```
+
+Losing that key breaks nothing already published — every pulse stays verifiable against
+the public key baked into it — but a new key starts a new chain from round 1, because an
+unendorsed key change mid-chain is exactly the forgery `verify_chain` exists to catch.
+
+For the full always-on service with the HTTP API instead, see [DEPLOY.md](DEPLOY.md). It
+is one machine, and it must stay one — the chain is single-writer.
 
 ## Quick start
 

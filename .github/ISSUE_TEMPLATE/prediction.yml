@@ -1,0 +1,52 @@
+name: Predict a pulse
+description: Name the next number Beamline will publish, before it exists.
+title: "prediction: "
+labels: ["prediction"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Opening this issue timestamps your guess with GitHub's clock, not ours.
+
+        The next pulse is emitted by a scheduled job that commits its result publicly.
+        When it lands, this issue is scored automatically and closed with the verdict:
+        your value against the published one, and how many leading bits they shared.
+
+        Only issues created **before** a pulse are scored against it. That rule is the
+        whole challenge, and you can check we followed it — your `created_at` and the
+        pulse's commit are both public records held by GitHub.
+
+  - type: input
+    id: prediction
+    attributes:
+      label: Your predicted output
+      description: >
+        Exactly 128 hex characters — the same shape as the `output` field of any pulse
+        in `beacon/chain.json`. This is 64 bytes of SHA-512.
+      placeholder: "3f9a1c… (128 hex characters)"
+    validations:
+      required: true
+
+  - type: textarea
+    id: method
+    attributes:
+      label: How did you arrive at it?
+      description: >
+        Optional, and it changes nothing about how you are scored. But if you found a
+        real weakness rather than guessing, this is where to say so — a genuine break
+        is worth more than a lucky match, and is far likelier to be the thing that
+        actually happens.
+      placeholder: "Guessed. / Derived from the previous pulse because…"
+    validations:
+      required: false
+
+  - type: checkboxes
+    id: understood
+    attributes:
+      label: Before you submit
+      options:
+        - label: >
+            I understand a pulse is 512 bits, so guessing one at random succeeds with
+            probability 2^-512 — a number with no physical analogy. I am not expecting
+            to win this way.
+          required: true
