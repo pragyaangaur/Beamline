@@ -119,6 +119,15 @@ jobs:
           while :; do
             slot=$(( $(date +%s) + 600 ))
 
+            # Pick up code pushed since this run started. A run lasts nearly three
+            # hours, so without this a fix waits that long to take effect, and the
+            # only pull was the one inside publish, after the tick had already used
+            # the old code. That cost two rounds to deploy a one line change and made
+            # it look as though the fix had not worked. The install is editable, so
+            # updating the working tree is all it takes.
+            git pull --rebase --autostash origin "${GITHUB_REF_NAME}" \
+              || echo "could not refresh the checkout; continuing on the current code" >&2
+
             if python scripts/beacon_tick.py --gather 25 --period 600; then
               # Scoring is allowed to fail without costing the pulse. The pulse is the
               # published record; a prediction that goes unscored this round is picked
