@@ -146,6 +146,53 @@ def _cmd_selftest(args) -> int:
     return 1 if failures else 0
 
 
+def _verify_chain_file(args) -> int:
+    """Check a published chain end to end, offline.
+
+    The live beacon invites strangers to predict its next pulse, which means inviting
+    them to distrust the chain those pulses land in. Telling them to write Python to
+    check it is telling them to take the answer on faith, so this does the whole job
+    from the file the beacon publishes.
+
+    The default `--public-key` is the one inside the bundle, and that proves less than
+    it looks: a forged chain names its own key and verifies against itself perfectly.
+    Passing a key recorded from somewhere else is what turns this into evidence, and
+    the output says so rather than letting a green tick imply more than it earned.
+    """
+    from pathlib import Path as _Path
+
+    from .entropy.beacon import verify_chain
+
+    try:
+        bundle = json.loads(_Path(args.chain).read_text())
+    except (OSError, ValueError) as e:
+        print(f"could not read {args.chain}: {e}", file=sys.stderr)
+        return 2
+
+    pulses = bundle.get("pulses") if isinstance(bundle, dict) else bundle
+    if not isinstance(pulses, list) or not pulses:
+        print(f"{args.chain} holds no pulses", file=sys.stderr)
+        return 2
+
+    supplied = args.public_key
+    key = supplied or (bundle.get("public_key") if isinstance(bundle, dict) else None)
+    ok, why = verify_chain(pulses, key)
+
+    if args.json:
+        print(json.dumps({"ok": ok, "reason": why, "pulses": len(pulses),
+                          "public_key": key, "key_supplied": bool(supplied)}, indent=2))
+        return 0 if ok else 1
+
+    rounds = f"round {pulses[0].get('round')} to {pulses[-1].get('round')}"
+    print(f"{'OK  ' if ok else 'FAIL'} {len(pulses)} pulses, {rounds}")
+    print(f"     {why}")
+    if ok and not supplied:
+        print("\nNote: checked against the key inside this file. A forged chain names\n"
+              "its own key and passes this too. Re-run with --public-key set to a key\n"
+              "you recorded elsewhere to make this mean something.")
+    return 0 if ok else 1
+
+
 def _cmd_verify(args) -> int:
     """Check a published draw record without writing any code.
 
@@ -159,6 +206,9 @@ def _cmd_verify(args) -> int:
     """
     import sys as _sys
     from pathlib import Path as _Path
+
+    if args.chain:
+        return _verify_chain_file(args)
 
     sdk = _Path(__file__).resolve().parent.parent / "sdk" / "python"
     if sdk.is_dir():
@@ -272,8 +322,11 @@ def main(argv: list[str] | None = None) -> int:
     st.set_defaults(func=_cmd_selftest)
 
     vf = sub.add_parser("verify", help="check a published draw record, offline")
-    vf.add_argument("--draw", required=True, metavar="FILE",
-                    help="the published record: pulse, commitment, winners")
+    what = vf.add_mutually_exclusive_group(required=True)
+    what.add_argument("--draw", metavar="FILE",
+                      help="the published record: pulse, commitment, winners")
+    what.add_argument("--chain", metavar="FILE",
+                      help="a chain bundle, such as the beacon's published chain.json")
     vf.add_argument("--public-key", default=None,
                     help="the signing key you expect, recorded out of band. Falls back "
                          "to the one in the record, which proves less.")

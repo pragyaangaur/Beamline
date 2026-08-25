@@ -3,6 +3,11 @@ name: CI
 on:
   push:
     branches: ["**"]
+    # The beacon commits a pulse every ten minutes and changes no code doing it.
+    # Without this, the interesting CI runs would be buried under 144 identical
+    # green ones a day. A commit that touches anything else still runs the suite.
+    paths-ignore:
+      - "beacon/**"
   pull_request:
 
 jobs:
