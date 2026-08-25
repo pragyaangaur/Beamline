@@ -349,3 +349,53 @@ def test_a_stocked_archive_that_has_served_is_ok_and_reports_what_is_left():
 def test_public_data_sources_stay_marked_as_public():
     """NOAA contributes zero secret entropy, and the record must keep saying so."""
     assert tick._source_state(_snap("astro", ok=1e9, public=True))["public_data"] is True
+
+
+# --- recognising a guess when the label is missing -------------------------
+
+def _issue(title="prediction: round 9", labels=(), body=A):
+    return {"number": 1, "created_at": "2023-11-14T22:13:00Z", "body": body,
+            "title": title, "user": {"login": "someone"},
+            "labels": [{"name": n} for n in labels]}
+
+
+def test_a_labelled_issue_is_a_prediction():
+    assert resolve.is_prediction(_issue(labels=["prediction"]))
+
+
+def test_an_unlabelled_issue_from_the_form_is_still_a_prediction():
+    """The label did not exist in the repository until it was created.
+
+    GitHub silently drops a label an issue form names but the repository lacks, so
+    early guesses carry no label through no fault of the person who lodged them.
+    Scoring only labelled issues would have quietly ignored every one of them.
+    """
+    assert resolve.is_prediction(_issue(labels=[]))
+
+
+def test_the_title_check_is_not_case_sensitive():
+    assert resolve.is_prediction(_issue(title="Prediction: round 9"))
+
+
+def test_an_ordinary_issue_is_not_a_prediction():
+    assert not resolve.is_prediction(_issue(title="Bug: verifier crashes", labels=[]))
+
+
+def test_a_bug_report_quoting_a_pulse_is_not_swept_up_as_a_guess():
+    """Matching on "contains 128 hex characters" would auto-close it as a loss.
+
+    Being closed as a losing guess is a poor reward for reporting a bug, and the
+    report would be buried under a verdict nobody asked for.
+    """
+    quoted = _issue(title="Bug: round 12 fails to verify", labels=[],
+                    body=f"the output was {A} and check_chain rejects it")
+    assert not resolve.is_prediction(quoted)
+
+
+def test_every_label_the_challenge_writes_is_declared_for_creation():
+    """Anything applied later must be creatable, or it is dropped just as silently."""
+    written = {"prediction", "resolved", "unreadable"}
+    assert written <= set(resolve.LABELS)
+    for name, (colour, description) in resolve.LABELS.items():
+        assert len(colour) == 6 and int(colour, 16) >= 0, name
+        assert description
