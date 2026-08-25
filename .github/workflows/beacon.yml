@@ -47,7 +47,7 @@ permissions:
 jobs:
   pulse:
     runs-on: ubuntu-latest
-    timeout-minutes: 60
+    timeout-minutes: 180
     steps:
       - uses: actions/checkout@v4
 
@@ -58,7 +58,7 @@ jobs:
       - name: Install
         run: pip install -e .
 
-      - name: Publish a pulse every ten minutes for the next fifty
+      - name: Publish a pulse every ten minutes
         env:
           BEAMLINE_BEACON_KEY: ${{ secrets.BEAMLINE_BEACON_KEY }}
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -91,13 +91,19 @@ jobs:
           }
 
           # GitHub honours a */10 schedule when it feels like it. The first four runs
-          # of this beacon fired roughly forty-five minutes apart, which left the page
-          # saying a pulse was due for most of an hour. So the schedule is treated as a
-          # restart signal and the cadence is kept here, by a loop that outlives any one
-          # trigger. Overlapping runs cannot collide: the concurrency group above
-          # serialises them, and GitHub keeps at most one queued, so the next run starts
-          # as this one ends.
-          deadline=$(( $(date +%s) + 3000 ))
+          # of this beacon fired 54, 44 and 45 minutes apart, which left the page saying
+          # a pulse was due for most of an hour. So the schedule is treated as a restart
+          # signal and the cadence is kept here, by a loop that outlives any one trigger.
+          #
+          # Two and three quarter hours of emitting, against a scheduler that turns up
+          # roughly every fifty minutes. Matching the loop to the observed gap would
+          # leave nothing spare, and a single skipped trigger would still show as a
+          # stalled beacon. This absorbs three of them.
+          #
+          # Overlapping runs cannot collide: the concurrency group above serialises
+          # them, and GitHub keeps at most one queued, so the next run starts as this
+          # one ends.
+          deadline=$(( $(date +%s) + 9900 ))
           while :; do
             slot=$(( $(date +%s) + 600 ))
 
