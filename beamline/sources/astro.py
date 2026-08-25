@@ -86,7 +86,22 @@ class AstroSource(Source):
                 continue
 
             # Take the newest few rows so a single stale sample doesn't dominate.
-            recent = rows[-6:]
+            #
+            # Sorted by time_tag rather than trusting file order, because NOAA does not
+            # guarantee one. The two rtsw feeds are served as a rolling 24 hour window
+            # whose newest row sits in the middle of the array and whose *last* row is
+            # a day old, so `rows[-6:]` was reading the stale end and publishing that
+            # timestamp as `latest_time_tag`. Nothing about the randomness depended on
+            # it, since these feeds are credited zero bits, but the whole reason they
+            # are mixed in is to pin a pulse to a moment anyone can re-fetch and check.
+            # A lower bound that is 24 hours early does not pin anything.
+            recent = sorted(
+                (r for r in rows if isinstance(r, dict) and r.get("time_tag")),
+                key=lambda r: str(r["time_tag"]),
+            )[-6:]
+            if not recent:
+                meta["feeds"][feed] = {"error": "no timestamped rows"}
+                continue
             tag = str(recent[-1].get("time_tag", ""))
             if tag and self._last_tags.get(feed) != tag:
                 fresh = True
