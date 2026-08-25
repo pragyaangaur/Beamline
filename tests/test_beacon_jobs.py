@@ -296,3 +296,56 @@ def test_a_shutdown_failure_does_not_discard_the_pulse(tmp_path, monkeypatch):
     assert bundle["pulses"], "the emitted pulse was lost to the shutdown failure"
     assert bundle["pulses"][-1]["round"] == bundle["latest_round"]
     assert bundle["pulses"][-1]["signature"]
+
+
+# --- the published source summary --------------------------------------------
+
+def _snap(name, ok=None, errors=0, err=None, archive=None, public=False):
+    s = {"name": name, "public_data": public, "last_ok": ok,
+         "last_error": err, "consecutive_errors": errors}
+    if archive is not None:
+        s["archive_empty"] = archive
+        s["archive_blocks_remaining"] = 0 if archive else 40
+    return s
+
+
+def test_the_live_quantum_source_and_the_local_archive_are_told_apart():
+    """Both answer to `anu_qrng`, and the published record has to distinguish them.
+
+    This file is the evidence behind a public claim about where the randomness comes
+    from. A reader must be able to tell "the quantum endpoint answered" from "the
+    local cache had nothing spare".
+    """
+    live = tick._source_state(_snap("anu_qrng", ok=1e9))
+    arch = tick._source_state(_snap("anu_qrng", archive=True))
+    assert live["role"] == "live" and arch["role"] == "archive"
+    assert live["state"] == "ok"
+
+
+def test_an_empty_archive_is_idle_rather_than_failing():
+    """A cold runner has nothing cached yet, and that is not a fault.
+
+    Reporting it as a failure was the bug: it made a working quantum endpoint look
+    broken in the published chain for three consecutive rounds.
+    """
+    s = tick._source_state(_snap("anu_qrng", archive=True))
+    assert s["state"] == "idle"
+    assert s["last_error"] is None
+    assert s["blocks_remaining"] == 0
+
+
+def test_a_source_that_raised_is_reported_as_failing_with_its_reason():
+    s = tick._source_state(_snap("anu_qrng", errors=3, err="HTTP 429"))
+    assert s["state"] == "failing"
+    assert s["last_error"] == "HTTP 429"
+
+
+def test_a_stocked_archive_that_has_served_is_ok_and_reports_what_is_left():
+    s = tick._source_state(_snap("anu_qrng", ok=1e9, archive=False))
+    assert s["state"] == "ok"
+    assert s["blocks_remaining"] == 40
+
+
+def test_public_data_sources_stay_marked_as_public():
+    """NOAA contributes zero secret entropy, and the record must keep saying so."""
+    assert tick._source_state(_snap("astro", ok=1e9, public=True))["public_data"] is True
