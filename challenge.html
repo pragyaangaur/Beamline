@@ -138,6 +138,7 @@
       <div class="stat"><div class="k">Attempts so far</div><div class="v" id="s-tries">&mdash;</div></div>
     </div>
     <div class="note bad" id="offline" hidden></div>
+    <div class="note warn" id="late" hidden></div>
   </div>
 </div>
 
@@ -360,9 +361,33 @@ async function refresh(){
 function tick(){
   if(dueAt === null) return;
   const left = (dueAt - Date.now()) / 1000;
-  $("s-closes").textContent = left > 0
-    ? "~" + Math.floor(left / 60) + "m " + String(Math.floor(left % 60)).padStart(2,"0") + "s"
-    : "due now";
+
+  if(left > 0){
+    $("s-closes").textContent = "~" + Math.floor(left / 60) + "m "
+      + String(Math.floor(left % 60)).padStart(2,"0") + "s";
+    $("late").hidden = true;
+    return;
+  }
+
+  // Past due. The old page said "due now" and then said it forever, which reads the
+  // same whether the scheduler is a minute behind or the beacon has stopped. The
+  // number of minutes is the whole difference, so show it.
+  const over = Math.floor(-left / 60);
+  $("s-closes").textContent = over < 1 ? "due now" : over + "m overdue";
+
+  // GitHub runs scheduled jobs late, and each run covers the following fifty minutes,
+  // so a gap while one run hands over to the next is ordinary. Past that, something
+  // is actually wrong and the page should say so rather than keep counting.
+  $("late").hidden = over < 20;
+  if(over >= 20)
+    $("late").innerHTML = "<strong>Round " + (latestRound + 1) + " is " + over
+      + " minutes late.</strong> The beacon publishes from a scheduled job, and "
+      + "GitHub runs those late under load. A pulse that never lands leaves a gap "
+      + "anyone can see in the "
+      + "<a href=\"https://github.com/" + REPO + "/actions/workflows/beacon.yml\">run "
+      + "history</a> and the "
+      + "<a href=\"https://github.com/" + REPO + "/commits/main/beacon\">commit log</a>. "
+      + "Both are public, and neither is ours to edit after the fact.";
 }
 
 // Every prediction ever lodged, open and scored alike, counted straight from GitHub.
