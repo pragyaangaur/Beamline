@@ -487,3 +487,59 @@ def test_the_real_published_chain_reads_cleanly():
     """The live file, exactly as the beacon writes it."""
     bundle = json.loads((ROOT / "beacon" / "chain.json").read_text())
     assert resolve.latest_pulse(bundle)["round"] == bundle["latest_round"]
+
+
+# --- the guess must still be a secret when it is scored ---------------------
+#
+# `created_at` is GitHub's and cannot be forged, so the ordering half of the rule is
+# safe. The guess is not: `adjudicate` reads it out of the issue BODY at scoring time,
+# and an author can edit a body whenever they like. Lodge a placeholder early, wait for
+# the answer, paste it in, and adjudicate sees an untouched early timestamp beside a
+# perfect guess -- verified against a real published pulse at 512 of 512 bits.
+#
+# The only thing that ever stopped it was the workflow scoring before it pushes. That
+# invariant was asserted nowhere and tested nowhere, and this module's own usage line
+# violates it: run standalone against a checkout, the newest pulse in the file is
+# already public.
+
+def test_editing_the_body_after_publication_would_win_if_the_answer_were_public():
+    """The attack itself, so the guard below is protecting something demonstrable."""
+    actual = "5c" * 64
+    lodged = "2026-08-26T00:00:00Z"
+    emitted = resolve.iso_to_ms("2026-08-26T04:00:00Z")   # an hour later
+
+    placeholder = issue(lodged, body="00" * 64)
+    assert resolve.adjudicate(placeholder, actual, emitted)["correct"] is False
+
+    edited = issue(lodged, body=actual)      # same created_at, new body
+    call = resolve.adjudicate(edited, actual, emitted)
+    assert call["verdict"] == "early" and call["correct"] is True
+    assert call["prefix_bits"] == 512
+
+
+def test_scoring_refuses_a_pulse_the_world_can_already_read(monkeypatch):
+    monkeypatch.setattr(resolve, "published_round", lambda: 81)
+    with pytest.raises(SystemExit, match="already published"):
+        resolve.check_target_is_unpublished(81)
+    with pytest.raises(SystemExit, match="already published"):
+        resolve.check_target_is_unpublished(80)
+
+
+def test_scoring_proceeds_for_the_round_that_has_not_been_pushed_yet(monkeypatch):
+    """What the workflow actually does: emit N+1, score it, then publish it."""
+    monkeypatch.setattr(resolve, "published_round", lambda: 81)
+    resolve.check_target_is_unpublished(82)     # must not raise
+
+
+def test_an_undeterminable_publication_state_fails_closed(monkeypatch):
+    """A skipped round costs nothing -- the issues stay open and the next pulse takes
+    them, which is what already happens when scoring fails. Guessing costs the prize."""
+    monkeypatch.setattr(resolve, "published_round", lambda: None)
+    with pytest.raises(SystemExit, match="cannot tell"):
+        resolve.check_target_is_unpublished(82)
+
+
+def test_published_round_reads_the_committed_chain():
+    """Against this repository's real origin/main."""
+    seen = resolve.published_round()
+    assert seen is None or isinstance(seen, int)
