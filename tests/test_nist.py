@@ -222,3 +222,87 @@ class TestUniformityChecking:
         lo10, _ = S.proportion_confidence_interval(10)
         lo100, _ = S.proportion_confidence_interval(100)
         assert lo100 > lo10
+
+
+# ---------------------------------------------------------------------------
+# Known-answer vectors from SP 800-22 Rev 1a
+# ---------------------------------------------------------------------------
+# The suite above checks behaviour: biased sources get caught, good ones pass. That is
+# the property that matters, but it cannot tell a correct statistic from one that is
+# merely monotonic in the right direction -- and a constant read off the wrong row of a
+# NIST table is exactly the kind of error that stays invisible to a behavioural test.
+# (`health.APT_CUTOFF` was such an error: 326, the binary row, where 31 was meant.)
+#
+# So each test is also pinned to the worked example printed in the standard.
+
+class TestPublishedVectors:
+    """Section 2.x "Example" blocks of SP 800-22 Rev 1a."""
+
+    @staticmethod
+    def _bits(s: str):
+        import numpy as np
+        return np.array([int(c) for c in s], dtype=np.uint8)
+
+    def test_frequency_monobit(self):
+        # 2.1.8: eps = 1011010101, n = 10
+        r = S.frequency(self._bits("1011010101"))
+        assert r.p_value == pytest.approx(0.527089, abs=1e-6)
+
+    def test_block_frequency(self):
+        # 2.2.8: eps = 0110011010, n = 10, M = 3
+        r = S.block_frequency(self._bits("0110011010"), M=3)
+        assert r.p_value == pytest.approx(0.801252, abs=1e-6)
+
+    def test_runs(self):
+        # 2.3.8: eps = 1001101011, n = 10
+        r = S.runs(self._bits("1001101011"))
+        assert r.p_value == pytest.approx(0.147232, abs=1e-6)
+
+    def test_approximate_entropy(self):
+        # 2.12.8: eps = 0100110101, n = 10, m = 3.
+        #
+        # m must be forced. The implementation reduces m until the expected cell counts
+        # mean something, and at n = 10 that takes m to 2 -- correctly, since m = 3
+        # wants a few hundred bits. NIST's example ignores its own guidance to keep the
+        # arithmetic printable, so the vector only applies to the inner computation.
+        import math
+
+        from beamline.qa.special import igamc
+        bits = self._bits("0100110101")
+        m, n = 3, 10
+        ap_en = S._phi(bits, m) - S._phi(bits, m + 1)
+        chi2 = 2.0 * n * (math.log(2) - ap_en)
+        assert igamc(2 ** (m - 1), chi2 / 2.0) == pytest.approx(0.261961, abs=1e-6)
+
+    def test_cumulative_sums_follows_the_formula_not_the_printed_digits(self):
+        """2.13.8: eps = 1011010111, n = 10. The document prints 0.4116588.
+
+        Evaluating the standard's own series in double precision gives 0.41158472, and
+        this implementation agrees with that to 2e-8. The printed value is the outlier
+        by 7.4e-5, so it is the series that is pinned here, not the typo.
+        """
+        from math import erfc, floor, sqrt
+
+        def phi(x):
+            return 0.5 * erfc(-x / sqrt(2.0))
+
+        n, z = 10, 4
+        rn = sqrt(n)
+        s1 = sum(phi(((4 * k + 1) * z) / rn) - phi(((4 * k - 1) * z) / rn)
+                 for k in range(floor((-n / z + 1) / 4), floor((n / z - 1) / 4) + 1))
+        s2 = sum(phi(((4 * k + 3) * z) / rn) - phi(((4 * k + 1) * z) / rn)
+                 for k in range(floor((-n / z - 3) / 4), floor((n / z - 1) / 4) + 1))
+        reference = 1.0 - s1 + s2
+
+        r = S.cumulative_sums(self._bits("1011010111"))
+        assert r.p_value == pytest.approx(reference, abs=1e-7)
+
+    def test_tests_that_cannot_apply_are_skipped_not_guessed(self):
+        """A ten-bit sequence is far too short for these two.
+
+        A p-value computed anyway would be meaningless, and meaningless numbers in a
+        published report are worse than an admitted gap. Both must say they skipped.
+        """
+        short = self._bits("1001010011")
+        for result in (S.spectral(short), S.serial(short, m=3)):
+            assert result.skipped and result.reason
