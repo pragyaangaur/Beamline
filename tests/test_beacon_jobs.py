@@ -408,3 +408,46 @@ def test_the_per_run_cap_is_smaller_than_the_hourly_api_budget():
     the people it takes scoring away from are the ones who lodged an honest guess.
     """
     assert resolve.MAX_PER_RUN * 2 < 5000
+
+
+def _scored(handle: str, bits: int, issue_no: int, round_no: int) -> dict:
+    return {"handle": handle, "issue": issue_no, "round": round_no,
+            "predicted": A, "prefix_bits": bits, "correct": False}
+
+
+def test_the_leaderboard_counts_every_attempt_not_just_the_ones_after_the_best():
+    """A better score must not wipe out the count of the tries that preceded it.
+
+    `attempts` used to live on the best-score entry, so replacing that entry threw the
+    counter away. The board credited this challenger with one attempt out of three, and
+    the one it kept was the hit. Losing attempts are the thing the challenge asks people
+    to accumulate, so undercounting them is not a cosmetic error.
+    """
+    # Newest first, as `recent` is stored. The best score is the OLDEST entry, which is
+    # the ordering that triggered the bug.
+    recent = [_scored("alice", 5, 3, 10),
+              _scored("alice", 2, 2, 9),
+              _scored("alice", 9, 1, 8)]
+
+    (row,) = resolve.build_leaderboard(recent)
+    assert row["attempts"] == 3
+    assert row["best_prefix_bits"] == 9
+    # And it points at the attempt that actually earned the score.
+    assert (row["issue"], row["round"]) == (1, 8)
+
+
+def test_the_leaderboard_ranks_by_best_score_and_keeps_challengers_separate():
+    recent = [_scored("alice", 4, 1, 9), _scored("bob", 7, 2, 9),
+              _scored("bob", 1, 3, 8)]
+    board = resolve.build_leaderboard(recent)
+    assert [r["handle"] for r in board] == ["bob", "alice"]
+    assert {r["handle"]: r["attempts"] for r in board} == {"bob": 2, "alice": 1}
+
+
+def test_the_leaderboard_is_bounded():
+    recent = [_scored(f"user{i}", i, i, 1) for i in range(resolve.LEADERBOARD + 15)]
+    assert len(resolve.build_leaderboard(recent)) == resolve.LEADERBOARD
+
+
+def test_an_empty_board_is_a_leaderboard_not_a_crash():
+    assert resolve.build_leaderboard([]) == []
