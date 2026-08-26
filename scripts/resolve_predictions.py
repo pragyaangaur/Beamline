@@ -509,6 +509,11 @@ def main() -> None:
                     "the `output` field of any pulse in "
                     "[`beacon/chain.json`](https://github.com/" + repo + "/blob/main/beacon/chain.json). "
                     "Open a new one and paste the full value.\n\n"
+                    "Reopening this issue will not put it back in the queue: the "
+                    "guess is read from the body when it is scored, so an issue that "
+                    "has already been through scoring is closed again rather than "
+                    "re-read. A new issue gets a fresh timestamp, which is the thing "
+                    "being checked.\n\n"
                     "<sub>Posted automatically by the beacon.</sub>"
                 )})
             gh(f"/repos/{repo}/issues/{issue['number']}", "PATCH",
@@ -556,6 +561,10 @@ def main() -> None:
                 f"Check the full pulse in "
                 f"[`beacon/chain.json`](https://github.com/{repo}/blob/main/beacon/chain.json) and verify its "
                 f"signature with `beamline verify`.\n\n"
+                f"This verdict is final. Reopening will not re-score it: the guess "
+                f"is read from the issue body at scoring time, so anything that has "
+                f"already been scored is closed again rather than re-read. Lodge "
+                f"another guess as a new issue and it gets its own timestamp.\n\n"
                 f"<sub>Scored automatically against round {round_no}. "
                 f"Expected shared prefix for an unbiased guess: 1 bit.</sub>"
             )})
