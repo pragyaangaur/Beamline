@@ -386,3 +386,42 @@ class TestVerifierAgreesWithServer:
         pulses[3]["local_value"] = "00" * 64
         ok, reason = v.check_chain(pulses, allow_unsigned=True)
         assert not ok and "round 4" in reason
+
+
+def test_the_sdk_will_not_send_a_key_to_a_host_nobody_runs():
+    """Both clients defaulted to https://api.beamline.dev, which is not the service.
+
+    There is no hosted Beamline; every example in the README points at a local one. The
+    domain sits on a parking host and currently refuses connections, so omitting
+    `base_url` produced a confusing timeout. The real cost is that the first request
+    carries `Authorization: Bearer <key>`, so a default aimed at a host the project does
+    not control is a live key disclosed to whoever takes that domain over.
+
+    Fail closed, the same rule `verify_pulse` applies to a missing trust anchor.
+    """
+    import sys
+    from pathlib import Path
+    root = Path(__file__).resolve().parent.parent
+    sys.path.insert(0, str(root / "sdk" / "python"))
+    from beamline_client.client import DEFAULT_BASE, Beamline
+
+    assert DEFAULT_BASE is None
+
+    with pytest.raises(ValueError, match="base_url is required"):
+        Beamline(api_key="bl_live_test")
+
+    # And the refusal says what to do instead, rather than only what went wrong.
+    try:
+        Beamline(api_key="bl_live_test")
+    except ValueError as e:
+        assert "127.0.0.1:8080" in str(e) and "DEPLOY.md" in str(e)
+
+    # A real base_url still constructs.
+    assert Beamline(api_key="bl_live_test", base_url="http://127.0.0.1:8080")
+
+    # Neither SDK may reintroduce the phantom host.
+    for path in (root / "sdk" / "python" / "beamline_client" / "client.py",
+                 root / "sdk" / "js" / "index.js"):
+        body = path.read_text()
+        assert "= 'https://api.beamline.dev'" not in body
+        assert '= "https://api.beamline.dev"' not in body

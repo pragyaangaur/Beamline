@@ -2,7 +2,7 @@
 
     from beamline_client import Beamline
 
-    bl = Beamline(api_key="bl_live_...")
+    bl = Beamline(api_key="bl_live_...", base_url="http://127.0.0.1:8080")
     bl.integers(6, 1, 49, unique=True)
     bl.password(length=24)
 
@@ -22,7 +22,20 @@ import httpx
 from . import verify as _v
 from . import __version__ as _version
 
-DEFAULT_BASE = "https://api.beamline.dev"
+#: There is no hosted Beamline. The API is something you run -- see DEPLOY.md -- and
+#: every example in the README points at a local one.
+#:
+#: This used to default to "https://api.beamline.dev", which is not the service. The
+#: domain is registered to a parking host and refuses connections, so the visible
+#: failure was a confusing timeout for anyone who omitted `base_url`. The invisible one
+#: is worse: this client sends `Authorization: Bearer <your key>` on the first request,
+#: so a default aimed at a host the project does not control is a live key disclosed to
+#: whoever picks that domain up.
+#:
+#: So there is no default. The same fail-closed rule `verify_pulse` applies to a missing
+#: trust anchor: if we cannot tell where this is supposed to point, say so rather than
+#: guess somewhere plausible.
+DEFAULT_BASE = None
 
 
 class BeamlineError(RuntimeError):
@@ -116,10 +129,18 @@ class FairDraw:
 
 
 class Beamline:
-    def __init__(self, api_key: str, base_url: str = DEFAULT_BASE, timeout: float = 30.0,
-                 max_retries: int = 3):
+    def __init__(self, api_key: str, base_url: str | None = DEFAULT_BASE,
+                 timeout: float = 30.0, max_retries: int = 3):
         if not api_key:
             raise ValueError("an API key is required")
+        if not base_url:
+            raise ValueError(
+                "base_url is required: there is no hosted Beamline to fall back to.\n"
+                "Point it at the service you run, e.g.\n"
+                "    Beamline(api_key=..., base_url='http://127.0.0.1:8080')\n"
+                "See DEPLOY.md. Verification needs no server at all -- "
+                "`beamline_client.verify` works offline against a published chain."
+            )
         self._max_retries = max_retries
         self._http = httpx.Client(
             base_url=base_url.rstrip("/"),

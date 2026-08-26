@@ -2,7 +2,7 @@
  * Beamline JavaScript client. Works in Node 18+ and modern browsers.
  *
  *   import { Beamline } from '@beamline/client';
- *   const bl = new Beamline({ apiKey: 'bl_live_...' });
+ *   const bl = new Beamline({ apiKey: 'bl_live_...', baseUrl: 'http://127.0.0.1:8080' });
  *   await bl.integers({ count: 6, min: 1, max: 49, unique: true });
  *
  *   const draw = await bl.fairDraw({ tag: 'raffle-88', count: 3, min: 1, max: 500 });
@@ -12,7 +12,17 @@
  * returns a promise. That is why this file cannot simply mirror the Python one.
  */
 
-const DEFAULT_BASE = 'https://api.beamline.dev';
+// There is no hosted Beamline. The API is something you run (see DEPLOY.md), and every
+// example in the README points at a local one.
+//
+// This was 'https://api.beamline.dev', which is not the service: the domain sits on a
+// parking host and refuses connections. The visible cost was a confusing timeout for
+// anyone who omitted `baseUrl`. The real one is that this client sends
+// `Authorization: Bearer <your key>` on the first request, so a default aimed at a host
+// the project does not control is a live key handed to whoever picks that domain up.
+//
+// Fail closed instead, the same way verifyPulse refuses without a trust anchor.
+const DEFAULT_BASE = null;
 const VERSION_TAG = 'beamline/pulse/v3';
 const COMMITMENT_VERSION = 'beamline/commitment/v2';
 const ROTATION_VERSION = 'beamline/rotation/v1';
@@ -635,6 +645,11 @@ export async function checkDraw(pulse, commitment, result, publicKeyHex,
 export class Beamline {
   constructor({ apiKey, baseUrl = DEFAULT_BASE, maxRetries = 3, fetchImpl } = {}) {
     if (!apiKey) throw new Error('an API key is required');
+    if (!baseUrl) throw new Error(
+      'baseUrl is required: there is no hosted Beamline to fall back to. Point it at '
+      + "the service you run, e.g. new Beamline({ apiKey, baseUrl: 'http://127.0.0.1:8080' }). "
+      + 'See DEPLOY.md. Verification needs no server at all: verifyPulse, verifyChain and '
+      + 'checkDraw all work offline against a published chain.');
     this.apiKey = apiKey;
     this.baseUrl = baseUrl.replace(/\/$/, '');
     this.maxRetries = maxRetries;
