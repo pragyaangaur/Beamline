@@ -26,9 +26,20 @@ import time
 
 from .health import SourceHealth
 
-# Conservative min-entropy credit, in bits per byte of source output.
+# Conservative min-entropy credit, in bits per byte of the data handed to `add()`.
+#
+# Note the unit. This is per byte of what a source actually delivers here, which for
+# `anu_qrng` is `blocks.condition()` output, not raw alphabet characters. An earlier
+# version of this comment justified the 6.0 as "base64url -> 6 bits/char", which was
+# wrong twice over: it is not the right unit, and `blocks.py` measured the alphabet at
+# 63 symbols and 5.977 bits/char precisely to stop that assumption being used.
 CREDIT_BITS_PER_BYTE: dict[str, float] = {
-    "anu_qrng": 6.0,   # base64url alphabet -> 6 bits/char ceiling; quantum origin
+    # 6.0, against conditioned output that carries very nearly 8.0: a 1024-char block
+    # conditions to 765 bytes holding 6121 measured bits, and this credits 4590 of
+    # them. The 25% haircut is deliberate. SHA-512 in the sponge arrangement
+    # `blocks.condition` uses is not an SP 800-90B vetted conditioning function, so the
+    # rate it could justify is not a rate we are entitled to claim.
+    "anu_qrng": 6.0,
     "local_os": 8.0,   # kernel CSPRNG, full credit
     "astro": 0.0,      # PUBLIC data. Provenance and timing flavour only. Never secret.
 }
