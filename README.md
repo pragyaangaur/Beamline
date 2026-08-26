@@ -524,6 +524,7 @@ estimators.
 
 ```bash
 python scripts/run_nist_tests.py --target all --streams 12 --json reports/nist-report.json
+python scripts/run_nist_tests.py --target beacon --beacon-pulses 128000   # 65 streams
 ```
 
 Twelve streams of 1,000,000 bits per target. `urandom` is an experimental control: the same
@@ -534,7 +535,25 @@ pipeline run against the host kernel CSPRNG, so a quirk in the harness shows up 
 | `raw-packed` | harvested blocks, 6-bit packed, no conditioning | 4 / 13 | 0.000000 |
 | `conditioned` | what actually enters the entropy pool | 15 / 15 | 0.555 |
 | `drbg` | what the API serves | 15 / 15 | 0.005 |
+| `beacon` | **what the beacon publishes** (65 streams) | 15 / 15 | 0.559 |
 | `urandom` | host kernel CSPRNG (control) | 15 / 15 | 0.255 |
+
+`beacon` is the row that matches the public claim, and for a long time it did not exist.
+Every other target assesses an *input* to the beacon or a neighbouring output; the value a
+challenger is invited to predict is a pulse `output`, and that was the one path with no
+target of its own. It is produced by running the real emit path -- pool extraction,
+canonical encoding, SHA-512 over the chained body -- and concatenating 128,000 pulse
+outputs, so what is measured is the published artefact rather than a stand-in for it.
+
+It is run at 65 streams rather than twelve because sixteen was not enough to read. A
+sixteen-stream run of this target failed the Spectral (DFT) proportion check, 3 failures
+against an expectation of 0.16, which looks like a finding and is not one: at that width a
+single test crossing the threshold is a coin-flip away from noise. Two controls settled it
+-- 200 independent `os.urandom` streams put the DFT failure rate at exactly its nominal
+1.0%, ruling out a mis-calibrated test, and 160 independent streams of beacon output gave
+1 failure (0.62%) with a median p of 0.518. The run above is the honest sample size for
+the question; the sixteen-stream result was a fluctuation, and is recorded here rather
+than quietly re-rolled.
 
 **The raw source fails on purpose, and that is the useful result.** `raw-packed` fails nine
 of thirteen tests because packing a 63-symbol alphabet into 6 bits leaves a code point
