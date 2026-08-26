@@ -335,20 +335,15 @@ def latest_pulse(bundle: dict) -> dict:
     return pulse
 
 
-def published_round() -> int | None:
-    """The newest round the PUBLIC chain has, per `origin/main`.
-
-    Read from git rather than the network: the workflow has already fetched origin at
-    the top of its loop, and the published file is what a challenger can actually see.
-    Returns None when it cannot be determined at all.
-    """
+def _round_from_git() -> int | None:
+    """The newest published round per `origin/main`, without touching the network."""
     try:
         out = subprocess.run(
             ["git", "show", "origin/main:beacon/chain.json"],
             cwd=ROOT, capture_output=True, text=True, timeout=30,
         )
     except Exception as e:
-        print(f"could not read the published chain: {e}", file=sys.stderr)
+        print(f"could not read the published chain from git: {e}", file=sys.stderr)
         return None
     if out.returncode != 0:
         return None
@@ -358,7 +353,43 @@ def published_round() -> int | None:
         return None
 
 
-def check_target_is_unpublished(round_no: int) -> None:
+def _round_from_web(repo: str) -> int | None:
+    """The same answer from the file GitHub actually serves.
+
+    A fallback, and a closer reading of the question. The check is "can a challenger
+    already see this value", and this is literally the bytes they would fetch.
+    """
+    url = f"https://raw.githubusercontent.com/{repo}/main/beacon/chain.json"
+    try:
+        req = urllib.request.Request(url, headers={"User-Agent": "beamline-beacon"})
+        with urllib.request.urlopen(req, timeout=20) as r:
+            return json.loads(r.read()).get("latest_round")
+    except Exception as e:
+        print(f"could not read the published chain over HTTP: {e}", file=sys.stderr)
+        return None
+
+
+def published_round(repo: str | None = None) -> int | None:
+    """The highest round either reading says is public.
+
+    Two independent sources, and the ANSWER IS THE MAXIMUM, not the first one that
+    replies. The question is whether a challenger can already see this value anywhere,
+    so one source saying yes settles it. A local `origin/main` ref can lag the file
+    GitHub is actually serving -- observed lagging by a round while writing this -- and
+    trusting the lower reading would wave through the exact pulse the guard exists to
+    catch.
+
+    Two sources also because failing closed stops scoring entirely, and one git
+    invocation is a thin thread for that to hang on. Returns None only when neither
+    answers, which is the one case the caller refuses on.
+    """
+    repo = repo or os.environ.get("GITHUB_REPOSITORY", "")
+    seen = [r for r in (_round_from_git(), _round_from_web(repo) if repo else None)
+            if r is not None]
+    return max(seen) if seen else None
+
+
+def check_target_is_unpublished(round_no: int, repo: str | None = None) -> None:
     """Refuse to score against a pulse the world can already read.
 
     This is the check that makes the challenge hold, and it was missing.
@@ -379,7 +410,7 @@ def check_target_is_unpublished(round_no: int) -> None:
     Fail closed. A skipped round costs nothing: the issues stay open and the next pulse
     scores them, which is what already happens whenever scoring fails.
     """
-    published = published_round()
+    published = published_round(repo)
     if published is None:
         raise SystemExit(
             "cannot tell whether round {n} is already public, so refusing to score.\n"
@@ -424,7 +455,7 @@ def main() -> None:
     emitted_ms = pulse["timestamp_ms"]
 
     # Before anything is scored: is the answer still secret?
-    check_target_is_unpublished(round_no)
+    check_target_is_unpublished(round_no, repo)
 
     board = load_board()
     scored = 0
