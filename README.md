@@ -600,9 +600,26 @@ beamline/
 sdk/python/          client and independent verifier
 sdk/js/              client and verifier (WebCrypto)
 index.html           the interactive demo, served by GitHub Pages
-chain.json           the pulses embedded in it
+challenge.html       the prediction challenge, same origin
+chain.json           the pulses embedded in the demo
+beacon/
+  chain.json         the LIVE chain: a rolling window, full history in the git log
+  predictions.json   the scoreboard
+.github/
+  workflows/beacon.yml       the beacon itself: emits a pulse, then scores guesses
+  workflows/ci.yml           tests, JS verifier attacks, published-artifact checks
+  ISSUE_TEMPLATE/prediction.yml   how a guess is lodged, and timestamped by GitHub
 examples/            user journey demo, public draw page
-scripts/             harvest_anu.py, run_nist_tests.py, build_site_data.py
+scripts/
+  beacon_tick.py             emits one signed pulse into beacon/chain.json
+  resolve_predictions.py     scores lodged guesses against the pulse that settled them
+  harvest_anu.py             bulk collection from the ANU endpoint
+  run_nist_tests.py          the SP 800-22 / SP 800-90B report
+  build_site_data.py         regenerates the demo page's embedded pulses
+  build_draw_page.py         regenerates the example draw record
+  build_canonical_vectors.py the encoding vectors both languages are pinned to
+  check_js_verifiers.mjs     attacks every JavaScript verifier
+reports/             the committed NIST run
 data/                runtime state, never committed
 ```
 
