@@ -41,6 +41,9 @@
      letter-spacing:-.035em; margin:0 0 20px; max-width:20ch}
   .sub{font-size:clamp(19px,1.7vw,23px); line-height:1.45; color:var(--ink-2);
        margin:0; max-width:62ch; text-wrap:pretty}
+  /* The offer's terms, under the claim they qualify. Smaller and set apart, because a
+     deadline that reads as part of the pitch is a deadline people skim past. */
+  .sub.terms{margin-top:18px; font-size:clamp(15px,1.15vw,17px); color:var(--ink-3)}
 
   .band{border-top:1px solid var(--line); background:var(--band); padding:clamp(28px,4vw,48px) 0}
   .band.plain{background:var(--bg)}
@@ -127,6 +130,11 @@
   <p class="sub">Beamline publishes a signed random value about every ten minutes. It
   claims you cannot know that value before it is published. Say what the next one will
   be, and if you are right, <strong id="prize">a month of Claude Pro is yours</strong>.</p>
+  <p class="sub terms">One prize, to the first person who takes it. The offer closes at
+  <span class="mono">2026-08-31T00:00:00Z</span>: a prediction counts if GitHub stamped
+  its issue before that instant, which is the same clock the scoring already runs on.
+  <a href="https://github.com/pragyaangaur/Beamline#the-standing-challenge">Full
+  terms</a>.</p>
 </div>
 
 <div class="band">
@@ -274,6 +282,14 @@
         promise.</p>
       </div>
     </div>
+    <p style="margin-top:20px"><strong>On the deadline.</strong> The offer closes at
+    <span class="mono">2026-08-31T00:00:00Z</span>, and the cut is on your guess rather
+    than on the pulse that settles it: a prediction lodged inside the window is still
+    scored, and still wins, if the round it names lands afterwards. That is the only
+    version of the rule a challenger can act on, because the issue timestamp is the one
+    side of the comparison you control. The beacon does not stop at the deadline, and
+    predictions go on being scored after it. The chain is the product; the prize is not.</p>
+
     <p style="margin-top:20px">Beamline documents four other ways it could be broken,
     covering forged chains, uncommitted draws, disagreeing verifiers and statistical
     bias. They carry no prize. They are written down because a claim nobody has stated

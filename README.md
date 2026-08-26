@@ -145,6 +145,18 @@ is actually running, which is what the next section is for.
 prize, and the first person to do it takes it. The terms live in this file, under public
 version control, so an edit made after somebody wins is itself a public record.
 
+**The offer closes at `2026-08-31T00:00:00Z`.** A prediction is eligible if the issue
+carrying it was created before that instant, by GitHub's clock -- the same `created_at`
+the scoring already runs on, so eligibility is a fact you can check rather than a call
+anybody makes. A guess lodged inside the window stays eligible even though the pulse
+that settles it lands afterwards; the deadline is on the guess, which is the only side
+of it a challenger controls.
+
+Two things the deadline does not do. It does not stop the beacon: pulses keep being
+emitted and predictions keep being scored after it, because the chain is the product and
+the prize is not. And it does not travel -- if the offer is ever extended, the extension
+is a commit to this file with a timestamp on it, like everything else here.
+
 [**The challenge page**](https://pragyaangaur.github.io/Beamline/challenge.html) is the
 easy way in.
 
