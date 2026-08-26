@@ -33,7 +33,11 @@ rather than papered over:
     so non-ASCII keys are simply not allowed rather than trusted to agree.
   * Strings are escaped as `\\uXXXX` for every character outside printable ASCII,
     using UTF-16 code units and surrogate pairs -- what Python's `ensure_ascii=True`
-    emits, and what the JavaScript encoder in `docs/index.html` reimplements.
+    emits, and what every JavaScript encoder here reimplements: `index.html`,
+    `examples/draw_page.html` and `sdk/js/index.js`. There is no `docs/` directory;
+    an earlier revision of this line pointed at one. All three are held to the
+    committed vectors by `scripts/check_js_verifiers.mjs`, which is the answer to
+    "how do you know the reimplementations still agree".
 
 The result is pure ASCII, which means the byte string is also stable across whatever
 encoding assumptions sit between here and a verifier.
