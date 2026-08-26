@@ -872,15 +872,41 @@ function resetChain() {
 
 /* ================= wiring ================= */
 const TABS = [["tab-draw", "pane-draw"], ["tab-check", "pane-check"], ["tab-chain", "pane-chain"]];
-for (const [t, pane] of TABS) {
-  $(t).addEventListener("click", () => {
-    for (const [t2, p2] of TABS) {
-      $(t2).setAttribute("aria-selected", String(t2 === t));
-      $(p2).hidden = p2 !== pane;
-    }
-    if (pane === "pane-check") runChecks(true);
+
+/* Declaring role="tablist" is a promise about the keyboard, not only a label for the
+   accessibility tree. A screen reader announces the group and tells the user to move
+   through it with the arrow keys; before this, those keys did nothing and only Tab
+   worked, so the page advertised an interaction it had not implemented.
+
+   Roving tabindex goes with it: a tablist should be one stop in the tab order, with
+   the arrows moving between the tabs inside it, rather than three separate stops. */
+function selectTab(id, {focus = false} = {}) {
+  for (const [t, pane] of TABS) {
+    const on = t === id;
+    $(t).setAttribute("aria-selected", String(on));
+    $(t).tabIndex = on ? 0 : -1;
+    $(pane).hidden = !on;
+    if (on && pane === "pane-check") runChecks(true);
+  }
+  if (focus) $(id).focus();
+}
+
+for (const [index, [t]] of TABS.entries()) {
+  $(t).addEventListener("click", () => selectTab(t));
+  $(t).addEventListener("keydown", (e) => {
+    const step = {ArrowRight: 1, ArrowDown: 1, ArrowLeft: -1, ArrowUp: -1}[e.key];
+    let next = null;
+    if (step !== undefined) next = (index + step + TABS.length) % TABS.length;
+    else if (e.key === "Home") next = 0;
+    else if (e.key === "End") next = TABS.length - 1;
+    if (next === null) return;
+    e.preventDefault();               // or Left/Right also scrolls the page
+    selectTab(TABS[next][0], {focus: true});
   });
 }
+
+// The starting state, so the roving tabindex is right before anyone touches it.
+selectTab("tab-draw");
 
 $("go").addEventListener("click", () => runDraw(true));
 $("again").addEventListener("click", () => runDraw(false));
