@@ -220,6 +220,36 @@ def build_leaderboard(recent: list[dict]) -> list[dict]:
                   key=lambda x: -x["best_prefix_bits"])[:LEADERBOARD]
 
 
+def latest_pulse(bundle: dict) -> dict:
+    """The pulse predictions are scored against: the highest round in the file.
+
+    Chosen by round rather than by position. `pulses[-1]` was the last element of a
+    list, which is the newest pulse only for as long as whatever wrote the file kept it
+    sorted -- an assumption held somewhere else entirely, in a SQL `ORDER BY`. This
+    value decides who wins, so it should not rest on a property nothing here checks.
+    The same mistake in the NOAA reader shipped and had to be fixed in production: the
+    last row of that feed is a day old, not the newest.
+
+    `latest_round` is cross-checked rather than trusted on its own. If the two disagree
+    the file is inconsistent, and scoring against either reading would resolve honest
+    predictions against a value the beacon may not have published.
+    """
+    pulses = bundle.get("pulses") or []
+    if not pulses:
+        raise SystemExit("beacon/chain.json holds no pulses; nothing to score against")
+
+    pulse = max(pulses, key=lambda p: p["round"])
+    declared = bundle.get("latest_round")
+    if declared is not None and declared != pulse["round"]:
+        raise SystemExit(
+            f"beacon/chain.json declares latest_round {declared} but its newest pulse "
+            f"is round {pulse['round']}. Refusing to score: one of the two is wrong, "
+            f"and guessing which would resolve predictions against a value that may "
+            f"never have been published."
+        )
+    return pulse
+
+
 def load_board() -> dict:
     if BOARD.exists():
         try:
@@ -240,7 +270,7 @@ def main() -> None:
     ensure_labels(repo)
 
     bundle = json.loads(CHAIN.read_text())
-    pulse = bundle["pulses"][-1]
+    pulse = latest_pulse(bundle)
     actual, round_no = pulse["output"], pulse["round"]
     emitted_ms = pulse["timestamp_ms"]
 

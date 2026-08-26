@@ -328,9 +328,15 @@ let counted = false;
 
 $("api-note").textContent = "beacon: github actions, every ~10 min";
 
-function offline(msg){
+/** The chain loaded but does not agree with itself, which is not the same problem as
+    the chain being missing, and must not be reported as though it were. */
+class Inconsistent extends Error {}
+
+function offline(msg, headline){
   $("offline").hidden = false;
-  $("offline").innerHTML = "<strong>The chain could not be loaded.</strong> " + msg;
+  $("offline").innerHTML = "<strong>"
+    + escapeHtml(headline || "The chain could not be loaded.") + "</strong> "
+    + escapeHtml(msg);
 }
 
 // Handles come from GitHub logins and predicted values from issue bodies. Both are
@@ -349,8 +355,17 @@ async function loadJSON(name){
 async function refresh(){
   try{
     const d = await loadJSON("chain.json");
-    const last = d.pulses[d.pulses.length - 1];
-    latestRound = d.latest_round;
+    // By round, not by position. The page took `latest_round` from one place and the
+    // output beside it from another -- the end of an array -- so an unsorted file would
+    // have shown round N's number under round M's heading, which on this page is the
+    // one error that matters: it is the value people are being invited to predict.
+    const last = d.pulses.reduce((a, b) => (b.round > a.round ? b : a));
+    if (last.round !== d.latest_round)
+      throw new Inconsistent(`The file says the chain stands at round `
+        + `${d.latest_round}, but the newest pulse in it is round ${last.round}. `
+        + `Rather than pick one, the page shows nothing: the number you would be `
+        + `predicting against is exactly what is in doubt.`);
+    latestRound = last.round;
     latestOutput = last.output;
     period = d.period_seconds || 600;
     dueAt = last.timestamp_ms + period * 1000;
@@ -364,9 +379,13 @@ async function refresh(){
     $("pulse-json").textContent = JSON.stringify(last, null, 1);
     validate();
   }catch(e){
-    offline("The beacon may not have emitted its first pulse yet. Until it has, there "
-          + "is no chain to predict against, and a gap is itself something you "
-          + "can check, in the repository's commit log.");
+    // Two different failures, and telling a visitor the wrong one is its own small
+    // dishonesty. A chain that will not load is probably a beacon that has not started;
+    // a chain that contradicts itself has loaded fine and is not to be trusted.
+    if (e instanceof Inconsistent) offline(e.message, "The chain does not agree with itself.");
+    else offline("The beacon may not have emitted its first pulse yet. Until it has, there "
+               + "is no chain to predict against, and a gap is itself something you "
+               + "can check, in the repository's commit log.");
   }
 }
 
