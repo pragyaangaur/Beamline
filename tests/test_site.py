@@ -120,3 +120,36 @@ def _derive(output_hex: str, tag: str, n: int) -> bytes:
         out += hashlib.sha512(base + counter.to_bytes(4, "big")).digest()
         counter += 1
     return bytes(out[:n])
+
+
+def test_every_package_agrees_with_the_licence_the_repository_ships():
+    """A shipped package must not offer terms the repository does not.
+
+    `sdk/js/package.json` said `"license": "MIT"` through two relicensings. npm shows
+    that field on the package page, so anyone taking it at face value would have
+    believed they held a permissive grant over code published under PolyForm
+    Noncommercial -- and the copy of the terms that would have contradicted them was
+    not in `files`, so it never shipped either.
+
+    Both halves are checked here, because a correct declaration pointing at a file the
+    tarball omits is not much better than the wrong declaration.
+    """
+    text = (ROOT / "LICENSE").read_text()
+    assert "PolyForm Noncommercial License 1.0.0" in text
+
+    pkg = json.loads((ROOT / "sdk" / "js" / "package.json").read_text())
+    assert "MIT" not in pkg["license"]
+    assert pkg["license"] == "SEE LICENSE IN LICENSE"
+
+    shipped = pkg.get("files") or []
+    assert "LICENSE" in shipped, "the licence must be in the published tarball"
+    for name in shipped:
+        assert (ROOT / "sdk" / "js" / name).exists(), f"files lists a missing {name}"
+
+    # And the copy beside the package is the same terms, not a stale fork of them.
+    assert (ROOT / "sdk" / "js" / "LICENSE").read_text() == text
+
+
+def test_the_python_project_declares_the_same_licence():
+    pyproject = (ROOT / "pyproject.toml").read_text()
+    assert 'license = "LicenseRef-PolyForm-Noncommercial-1.0.0"' in pyproject
