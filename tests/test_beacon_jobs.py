@@ -543,3 +543,32 @@ def test_published_round_reads_the_committed_chain():
     """Against this repository's real origin/main."""
     seen = resolve.published_round()
     assert seen is None or isinstance(seen, int)
+
+
+def _labelled(*names: str) -> dict:
+    got = issue("2026-08-26T00:00:00Z")
+    got["labels"] = [{"name": n} for n in names]
+    return got
+
+
+@pytest.mark.parametrize("label", ["resolved", "unreadable"])
+def test_a_reopened_issue_is_not_scored_a_second_time(label):
+    """Scoring closes and labels an issue. Nothing stops the author reopening it.
+
+    Nothing here used to look, so a reopened issue went back through scoring as if it
+    were new -- and kept its original `created_at` forever, so it was permanently
+    "early". One issue lodged once became an unlimited supply of attempts, each landing
+    in the attempt count, the leaderboard, and the running mean the README offers as a
+    public bias test for the beacon.
+    """
+    assert resolve.already_scored(_labelled("prediction", label))
+
+
+def test_a_fresh_prediction_is_still_scored():
+    assert not resolve.already_scored(_labelled("prediction"))
+    assert not resolve.already_scored(issue("2026-08-26T00:00:00Z"))
+
+
+def test_every_settled_label_is_one_the_scorer_actually_applies():
+    """If a label were renamed in LABELS but not here, reopening would work again."""
+    assert resolve.SETTLED <= set(resolve.LABELS)
