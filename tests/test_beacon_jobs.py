@@ -696,3 +696,75 @@ def test_no_reading_at_all_refuses(monkeypatch):
     assert resolve.published_round("o/r") is None
     with pytest.raises(SystemExit, match="cannot tell"):
         resolve.check_target_is_unpublished(99, "o/r")
+
+
+# --- one issue must never take down the run --------------------------------
+
+def _ok_issue(n: int) -> dict:
+    return {"number": n, "created_at": "2026-08-26T00:00:00Z",
+            "user": {"login": f"u{n}"}, "body": "cd" * 64,
+            "labels": [{"name": "prediction"}]}
+
+
+def _board() -> dict:
+    return {"attempts": 0, "exact_hits": 0, "sum_prefix_bits": 0,
+            "best": None, "recent": [], "leaderboard": []}
+
+
+def test_a_deleted_author_does_not_stop_the_challenge(monkeypatch):
+    """GitHub reports `user: null` once an author's account is gone.
+
+    That was read as `issue["user"]["login"]` inside a loop with no error handling, so
+    it aborted the run -- and the issue stayed open, held its place at the front of an
+    oldest-first queue, and aborted every run after it. One issue plus a deleted
+    account stopped the whole challenge for as long as nobody noticed.
+    """
+    monkeypatch.setattr(resolve, "gh", lambda *a, **k: None)
+    ghost = {"number": 901, "created_at": "2026-08-26T00:00:00Z", "user": None,
+             "body": A, "labels": [{"name": "prediction"}]}
+    assert resolve.author(ghost) == "(account removed)"
+
+    board = _board()
+    assert resolve.handle_issue(ghost, "o/r", A, 84, resolve.iso_to_ms("2026-08-27T00:00:00Z"), board) == "scored"
+    assert board["recent"][0]["handle"] == "(account removed)"
+
+
+@pytest.mark.parametrize("poison", [
+    {"number": 902, "user": {"login": "z"}, "body": "ab" * 64},              # no created_at
+    {"number": 903, "created_at": "???", "user": {"login": "z"}, "body": "ab" * 64},
+])
+def test_an_unprocessable_issue_is_skipped_not_fatal(poison, monkeypatch):
+    """Contained, so the rest of the queue is still scored."""
+    monkeypatch.setattr(resolve, "gh", lambda *a, **k: None)
+    board, scored, unprocessed = _board(), 0, 0
+    for item in [_ok_issue(1), poison, _ok_issue(2)]:
+        try:
+            if resolve.handle_issue(item, "o/r", A, 84, resolve.iso_to_ms("2026-08-27T00:00:00Z"), board) == "scored":
+                scored += 1
+        except Exception:
+            unprocessed += 1
+    assert (scored, unprocessed) == (2, 1), "both honest predictions must still score"
+
+
+@pytest.mark.parametrize("labels", [None, [{}], ["prediction"], [{"name": None}]])
+def test_label_reading_tolerates_any_shape(labels):
+    assert isinstance(resolve.label_names({"labels": labels}), set)
+
+
+def test_the_board_counts_an_issue_only_once_it_is_settled(monkeypatch):
+    """Board updates used to run BEFORE the comment and close.
+
+    A failure in either left the attempt counted and the issue still open, so the next
+    round counted it again -- inflating the very statistic the README offers as a
+    public bias test.
+    """
+    def failing_gh(path, method="GET", body=None):
+        if method == "PATCH":
+            raise RuntimeError("close failed")
+
+    monkeypatch.setattr(resolve, "gh", failing_gh)
+    board = _board()
+    with pytest.raises(RuntimeError):
+        resolve.handle_issue(_ok_issue(1), "o/r", A, 84, resolve.iso_to_ms("2026-08-27T00:00:00Z"), board)
+    assert board["attempts"] == 0, "an unsettled issue must not be counted"
+    assert board["recent"] == []
