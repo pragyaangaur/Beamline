@@ -49,6 +49,7 @@ import re
 import subprocess
 import sys
 import time
+import traceback
 import urllib.error
 import urllib.request
 from pathlib import Path
@@ -172,7 +173,7 @@ def is_prediction(issue: dict) -> bool:
     pulse output would match that, and being auto-closed as a losing guess is a poor
     reward for reporting a bug.
     """
-    if LABEL in {l["name"] for l in issue.get("labels", [])}:
+    if LABEL in label_names(issue):
         return True
     return (issue.get("title") or "").strip().lower().startswith("prediction:")
 
@@ -192,7 +193,7 @@ def already_scored(issue: dict) -> bool:
     landing in the attempt count, the leaderboard, and the running mean the README
     offers as a public test for bias in the beacon.
     """
-    return bool({l["name"] for l in issue.get("labels", [])} & SETTLED)
+    return bool(label_names(issue) & SETTLED)
 
 
 #: Hard ceiling on pages walked while listing. `MAX_PER_RUN` bounds how many issues are
@@ -440,7 +441,135 @@ def load_board() -> dict:
             "best": None, "recent": [], "leaderboard": []}
 
 
+def label_names(issue: dict) -> set[str]:
+    """The labels on an issue, tolerating whatever shape the API returns.
+
+    Read defensively because every caller runs inside the scoring loop, where an
+    exception used to cost the whole run rather than one issue.
+    """
+    out = set()
+    for entry in issue.get("labels") or []:
+        if isinstance(entry, dict) and isinstance(entry.get("name"), str):
+            out.add(entry["name"])
+        elif isinstance(entry, str):
+            out.add(entry)
+    return out
+
+
+def author(issue: dict) -> str:
+    """Who lodged this guess.
+
+    This was `issue["user"]["login"]`, read straight. GitHub reports `user: null` for
+    an issue whose author account is gone, so that raised -- inside a loop with no
+    error handling, which aborted the run. The issue then stayed open, held its place
+    at the front of an oldest-first queue, and aborted every following run. One issue
+    plus a deleted account stopped the entire challenge for as long as nobody looked.
+    """
+    user = issue.get("user")
+    login = user.get("login") if isinstance(user, dict) else None
+    return login if isinstance(login, str) and login else "(account removed)"
+
+
+def handle_issue(issue: dict, repo: str, actual: str, round_no: int,
+                 emitted_ms: int, board: dict) -> str:
+    """Resolve one issue. Returns "scored", "pending", or "settled".
+
+    All the work for a single issue lives here so `main` can contain a failure to the
+    issue that caused it.
+    """
+    number = issue["number"]
+
+    # Reopened after it was already settled. Close it again rather than scoring it
+    # twice; the verdict it was given is still on the issue.
+    if already_scored(issue):
+        print(f"issue #{number} was reopened after scoring; re-closing", file=sys.stderr)
+        gh(f"/repos/{repo}/issues/{number}", "PATCH", {"state": "closed"})
+        return "settled"
+
+    call = adjudicate(issue, actual, emitted_ms)
+    created_ms = call["created_ms"]
+
+    # Lodged after the answer was public, so it carries no evidence about this round.
+    # It stays open and waits for the next one.
+    if call["verdict"] == "late":
+        return "pending"
+
+    if call["verdict"] == "unreadable":
+        gh(f"/repos/{repo}/issues/{number}/comments", "POST", {
+            "body": (
+                "I could not find a prediction in this issue.\n\n"
+                "A prediction is **exactly 128 hex characters**, the same shape as "
+                "the `output` field of any pulse in "
+                "[`beacon/chain.json`](https://github.com/" + repo + "/blob/main/beacon/chain.json). "
+                "Open a new one and paste the full value.\n\n"
+                "Reopening this issue will not put it back in the queue: the "
+                "guess is read from the body when it is scored, so an issue that "
+                "has already been through scoring is closed again rather than "
+                "re-read. A new issue gets a fresh timestamp, which is the thing "
+                "being checked.\n\n"
+                "<sub>Posted automatically by the beacon.</sub>"
+            )})
+        gh(f"/repos/{repo}/issues/{number}", "PATCH",
+           {"state": "closed", "labels": ["prediction", "unreadable"]})
+        return "settled"
+
+    guess, bits, exact = call["guess"], call["prefix_bits"], call["correct"]
+    handle = author(issue)
+
+    verdict = (
+        f"### 🎉 Exact match on round {round_no}\n\n"
+        f"This is the outcome the challenge exists to be falsified by. "
+        f"All 512 bits agree. Please open a discussion, this needs a human.\n"
+        if exact else
+        f"### Round {round_no} is published, and it is not a match\n\n"
+        f"You matched the first **{bits}** bit{'s' if bits != 1 else ''} "
+        f"before diverging.\n"
+    )
+    gh(f"/repos/{repo}/issues/{number}/comments", "POST", {
+        "body": (
+            f"{verdict}\n"
+            f"| | |\n|---|---|\n"
+            f"| You predicted | `{guess[:32]}…` |\n"
+            f"| Round {round_no} was | `{actual[:32]}…` |\n"
+            f"| Shared leading bits | **{bits}** |\n"
+            f"| Lodged | `{issue['created_at']}` |\n"
+            f"| Pulse emitted | `{time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime(emitted_ms / 1000))}` |\n\n"
+            f"Your guess was recorded before the pulse existed. Both timestamps are "
+            f"GitHub's, not ours, so the ordering does not depend on trusting anyone. "
+            f"Check the full pulse in "
+            f"[`beacon/chain.json`](https://github.com/{repo}/blob/main/beacon/chain.json) and verify its "
+            f"signature with `beamline verify`.\n\n"
+            f"This verdict is final. Reopening will not re-score it: the guess "
+            f"is read from the issue body at scoring time, so anything that has "
+            f"already been scored is closed again rather than re-read. Lodge "
+            f"another guess as a new issue and it gets its own timestamp.\n\n"
+            f"<sub>Scored automatically against round {round_no}. "
+            f"Expected shared prefix for an unbiased guess: 1 bit.</sub>"
+        )})
+    gh(f"/repos/{repo}/issues/{number}", "PATCH",
+       {"state": "closed", "labels": ["prediction", "resolved"]})
+
+    # Counted only once the issue is settled. The board used to be updated before
+    # these two calls, so a failure in either left the attempt counted AND the issue
+    # open -- and the next round, still open, counted it a second time.
+    board["attempts"] += 1
+    board["sum_prefix_bits"] += bits
+    board["exact_hits"] += int(exact)
+    if board["best"] is None or bits > board["best"]["prefix_bits"]:
+        board["best"] = {"handle": handle, "prefix_bits": bits,
+                         "round": round_no, "issue": number}
+
+    board["recent"].insert(0, {
+        "handle": handle, "issue": number, "round": round_no,
+        "predicted": guess, "prefix_bits": bits, "correct": exact,
+        "lodged_at_ms": created_ms, "resolved_at_ms": emitted_ms,
+    })
+    del board["recent"][RECENT:]
+    return "scored"
+
+
 def main() -> None:
+
     repo = os.environ.get("GITHUB_REPOSITORY")
     if not repo or not os.environ.get("GITHUB_TOKEN"):
         raise SystemExit("GITHUB_REPOSITORY and GITHUB_TOKEN are both required")
@@ -460,6 +589,7 @@ def main() -> None:
     board = load_board()
     scored = 0
     pending = 0
+    unprocessed = 0
 
     # Three times the cap, so issues that cost a slot without being scored (reopened,
     # or lodged after this pulse) cannot starve the ones that would be.
@@ -484,92 +614,27 @@ def main() -> None:
             pending += remaining
             break
 
-        # Reopened after it was already settled. Close it again rather than scoring it
-        # twice; the verdict it was given is still on the issue.
-        if already_scored(issue):
-            print(f"issue #{issue['number']} was reopened after scoring; re-closing",
-                  file=sys.stderr)
-            gh(f"/repos/{repo}/issues/{issue['number']}", "PATCH", {"state": "closed"})
+        # One issue's failure is one issue's problem.
+        #
+        # There was no guard here, so anything raised on any issue aborted the run --
+        # and the issue stayed open, kept its place at the front of an oldest-first
+        # queue, and aborted every run after it. `issue["user"]["login"]` was the
+        # reachable one: GitHub reports `user: null` once an author's account is gone,
+        # so opening one issue and deleting the account stopped the challenge for
+        # everybody, permanently, for as long as nobody noticed.
+        try:
+            outcome = handle_issue(issue, repo, actual, round_no, emitted_ms, board)
+        except Exception:
+            traceback.print_exc()
+            print(f"issue #{issue.get('number')} could not be processed; skipping it "
+                  f"and carrying on", file=sys.stderr)
+            unprocessed += 1
             continue
 
-        call = adjudicate(issue, actual, emitted_ms)
-        created_ms = call["created_ms"]
-
-        # Lodged after the answer was public, so it carries no evidence about this
-        # round. It stays open and waits for the next one.
-        if call["verdict"] == "late":
+        if outcome == "scored":
+            scored += 1
+        elif outcome == "pending":
             pending += 1
-            continue
-
-        if call["verdict"] == "unreadable":
-            gh(f"/repos/{repo}/issues/{issue['number']}/comments", "POST", {
-                "body": (
-                    "I could not find a prediction in this issue.\n\n"
-                    "A prediction is **exactly 128 hex characters**, the same shape as "
-                    "the `output` field of any pulse in "
-                    "[`beacon/chain.json`](https://github.com/" + repo + "/blob/main/beacon/chain.json). "
-                    "Open a new one and paste the full value.\n\n"
-                    "Reopening this issue will not put it back in the queue: the "
-                    "guess is read from the body when it is scored, so an issue that "
-                    "has already been through scoring is closed again rather than "
-                    "re-read. A new issue gets a fresh timestamp, which is the thing "
-                    "being checked.\n\n"
-                    "<sub>Posted automatically by the beacon.</sub>"
-                )})
-            gh(f"/repos/{repo}/issues/{issue['number']}", "PATCH",
-               {"state": "closed", "labels": ["prediction", "unreadable"]})
-            continue
-
-        guess, bits, exact = call["guess"], call["prefix_bits"], call["correct"]
-        handle = issue["user"]["login"]
-        scored += 1
-
-        board["attempts"] += 1
-        board["sum_prefix_bits"] += bits
-        board["exact_hits"] += int(exact)
-        if board["best"] is None or bits > board["best"]["prefix_bits"]:
-            board["best"] = {"handle": handle, "prefix_bits": bits,
-                             "round": round_no, "issue": issue["number"]}
-
-        board["recent"].insert(0, {
-            "handle": handle, "issue": issue["number"], "round": round_no,
-            "predicted": guess, "prefix_bits": bits, "correct": exact,
-            "lodged_at_ms": created_ms, "resolved_at_ms": emitted_ms,
-        })
-        del board["recent"][RECENT:]
-
-        verdict = (
-            f"### 🎉 Exact match on round {round_no}\n\n"
-            f"This is the outcome the challenge exists to be falsified by. "
-            f"All 512 bits agree. Please open a discussion, this needs a human.\n"
-            if exact else
-            f"### Round {round_no} is published, and it is not a match\n\n"
-            f"You matched the first **{bits}** bit{'s' if bits != 1 else ''} "
-            f"before diverging.\n"
-        )
-        gh(f"/repos/{repo}/issues/{issue['number']}/comments", "POST", {
-            "body": (
-                f"{verdict}\n"
-                f"| | |\n|---|---|\n"
-                f"| You predicted | `{guess[:32]}…` |\n"
-                f"| Round {round_no} was | `{actual[:32]}…` |\n"
-                f"| Shared leading bits | **{bits}** |\n"
-                f"| Lodged | `{issue['created_at']}` |\n"
-                f"| Pulse emitted | `{time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime(emitted_ms / 1000))}` |\n\n"
-                f"Your guess was recorded before the pulse existed. Both timestamps are "
-                f"GitHub's, not ours, so the ordering does not depend on trusting anyone. "
-                f"Check the full pulse in "
-                f"[`beacon/chain.json`](https://github.com/{repo}/blob/main/beacon/chain.json) and verify its "
-                f"signature with `beamline verify`.\n\n"
-                f"This verdict is final. Reopening will not re-score it: the guess "
-                f"is read from the issue body at scoring time, so anything that has "
-                f"already been scored is closed again rather than re-read. Lodge "
-                f"another guess as a new issue and it gets its own timestamp.\n\n"
-                f"<sub>Scored automatically against round {round_no}. "
-                f"Expected shared prefix for an unbiased guess: 1 bit.</sub>"
-            )})
-        gh(f"/repos/{repo}/issues/{issue['number']}", "PATCH",
-           {"state": "closed", "labels": ["prediction", "resolved"]})
 
     if scored:
         # Best-ever score per challenger, which is the ranking people actually care
@@ -584,12 +649,19 @@ def main() -> None:
     # resolved count so a challenger sees their own attempt appear straight away,
     # without waiting up to ten minutes for the next pulse to score it.
     board["pending"] = pending
+    board["unprocessed"] = unprocessed
     board["mean_prefix_bits"] = round(board["sum_prefix_bits"] / n, 4) if n else None
     board["expected_mean_prefix_bits"] = 1.0
 
     BOARD.parent.mkdir(parents=True, exist_ok=True)
     BOARD.write_text(json.dumps(board, indent=1, sort_keys=True) + "\n")
     print(f"scored {scored} prediction(s) against round {round_no}", file=sys.stderr)
+    if unprocessed:
+        # Surfaced rather than swallowed. Containment stops one bad issue costing the
+        # run; it must not also make that issue invisible, because a prediction that
+        # can never be processed is somebody's guess going unanswered every round.
+        print(f"WARNING: {unprocessed} issue(s) could not be processed this run and "
+              f"remain open; see the tracebacks above", file=sys.stderr)
 
 
 if __name__ == "__main__":
