@@ -203,7 +203,24 @@ def weighted_choice(rand: Rand, items: list, weights: list[float], count: int) -
     for w in weights:
         acc += int(w / total_w * scale)
         cum.append(acc)
-    cum[-1] = scale  # absorb rounding drift into the final bucket
+
+    # Absorb rounding drift into the last bucket ENTITLED to it, which is the last one
+    # with a positive weight rather than simply the last one.
+    #
+    # `cum[-1] = scale` handed the remainder to whatever came last, weight zero
+    # included. With weights [1, 1, 1, 0] the thirds truncate to 4294967295 and the
+    # final assignment opened a single value of the 2^32 to the entry that had been
+    # weighted out, so an excluded entrant won with probability 2^-32. Rare is not the
+    # same as impossible, and "that person could not have won" is the entire claim a
+    # weighted draw makes. Levelling every trailing bucket to `scale` makes each of
+    # them unreachable, since selecting index i requires v < cum[i] and v >= cum[i-1].
+    #
+    # Granularity limit, stated rather than hidden: a weight below total_w / 2^32
+    # truncates to no share at all. At that point the caller is asking for odds this
+    # scale cannot represent, and rounding them up would be the same lie in reverse.
+    last_funded = max((i for i, w in enumerate(weights) if w > 0), default=-1)
+    for i in range(last_funded, len(cum)):
+        cum[i] = scale
 
     out = []
     for _ in range(count):

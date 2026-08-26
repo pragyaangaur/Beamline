@@ -9,6 +9,7 @@ from __future__ import annotations
 import collections
 import math
 import os
+import random
 
 import pytest
 
@@ -224,3 +225,58 @@ class TestUuidAndPassword:
     def test_dice_rejects_one_sided(self):
         with pytest.raises(ValueError):
             gen.dice(rand, 1, sides=1)
+
+
+# --- weighted_choice: exclusion has to mean exclusion -----------------------
+
+def _fixed(v: int):
+    """A rand() that always yields the same integer, for hitting one exact bucket."""
+    return lambda n: v.to_bytes(n, "big")
+
+
+@pytest.mark.parametrize("weights,items", [
+    ([1, 1, 1, 0], ["a", "b", "c", "ZERO"]),
+    ([2, 3, 5, 0], ["a", "b", "c", "ZERO"]),
+    ([1, 1, 1, 1, 1, 1, 0], list("abcdef") + ["ZERO"]),
+    ([0, 1], ["ZERO", "b"]),
+    ([1, 0, 1], ["a", "ZERO", "c"]),
+])
+def test_a_zero_weight_entry_can_never_be_drawn(weights, items):
+    """Rounding drift used to be dumped into the last bucket whatever its weight.
+
+    With weights [1, 1, 1, 0] the thirds truncate one short of 2^32 and that final
+    assignment left exactly one value of the 2^32 pointing at the entry weighted out of
+    the draw. An excluded entrant won with probability 2^-32. Rare is not impossible,
+    and "that person could not have won" is the whole claim a weighted draw makes.
+    """
+    scale = 1 << 32
+    # The boundary values are where it went wrong, so check the very top of the range
+    # exhaustively rather than trusting a random sweep to land there.
+    for v in range(scale - 8, scale):
+        assert "ZERO" not in gen.weighted_choice(_fixed(v), items, weights, 1)
+
+    # Plus a broad random sweep for anything the boundary check would miss.
+    rng = random.Random(3)
+    for _ in range(20_000):
+        v = rng.randrange(scale)
+        assert "ZERO" not in gen.weighted_choice(_fixed(v), items, weights, 1)
+
+
+def test_every_positive_weight_still_reachable_and_roughly_proportional():
+    """The fix must not close a bucket that was entitled to be open."""
+    counts = collections.Counter()
+    for _ in range(60_000):
+        counts[gen.weighted_choice(os.urandom, ["a", "b", "c"], [1, 2, 7], 1)[0]] += 1
+
+    total = sum(counts.values())
+    assert set(counts) == {"a", "b", "c"}
+    for item, expected in (("a", 0.1), ("b", 0.2), ("c", 0.7)):
+        assert counts[item] / total == pytest.approx(expected, abs=0.02)
+
+
+def test_the_last_positive_weight_absorbs_the_drift_so_nothing_is_lost():
+    """Every draw must land somewhere: the buckets have to cover the whole range."""
+    scale = 1 << 32
+    weights, items = [1, 1, 1, 0], ["a", "b", "c", "ZERO"]
+    for v in (0, 1, scale // 2, scale - 2, scale - 1):
+        assert gen.weighted_choice(_fixed(v), items, weights, 1)[0] in {"a", "b", "c"}
