@@ -314,7 +314,24 @@
 // nobody can backdate; the pulse is a commit from a public Actions run.
 //
 // ?data=... repoints the page at a local directory during development.
-const DATA = new URLSearchParams(location.search).get("data") || "./beacon";
+// `?data=` repoints the page at a local directory during development. It is
+// restricted to a same-origin relative path, because it used to accept anything.
+//
+// A link like ?data=https://attacker.example made this page fetch somebody else's
+// chain.json, and the values in it reach innerHTML further down. A hostile `round`
+// executed script on this origin -- on the page whose whole argument is that you
+// should not have to trust the person running it.
+function dataRoot() {
+  const raw = new URLSearchParams(location.search).get("data");
+  if (!raw) return "./beacon";
+  const absolute = /^[a-z][a-z0-9+.\-]*:/i.test(raw) || raw.startsWith("//");
+  if (absolute) {
+    console.warn("ignoring a cross-origin ?data= value; using the published chain");
+    return "./beacon";
+  }
+  return raw;
+}
+const DATA = dataRoot();
 const REPO = "pragyaangaur/Beamline";
 const NEW_ISSUE = `https://github.com/${REPO}/issues/new`;
 
@@ -360,6 +377,14 @@ async function refresh(){
     // have shown round N's number under round M's heading, which on this page is the
     // one error that matters: it is the value people are being invited to predict.
     const last = d.pulses.reduce((a, b) => (b.round > a.round ? b : a));
+    // Checked before it is used, not merely trusted. Every later use of `latestRound`
+    // is either arithmetic or string concatenation into innerHTML, and a value that is
+    // not an integer has no business reaching either.
+    if (!Number.isInteger(last.round) || !Number.isInteger(d.latest_round))
+      throw new Inconsistent("The chain does not carry integer round numbers, so "
+                           + "there is nothing here this page can safely display.");
+    if (typeof last.output !== "string" || !HEX128.test(last.output))
+      throw new Inconsistent("The newest pulse does not carry a 512-bit output.");
     if (last.round !== d.latest_round)
       throw new Inconsistent(`The file says the chain stands at round `
         + `${d.latest_round}, but the newest pulse in it is round ${last.round}. `

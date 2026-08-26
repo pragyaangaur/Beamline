@@ -222,3 +222,40 @@ def test_the_window_keeps_the_newest_pulses_not_the_oldest():
     rounds = sorted(p["round"] for p in bundle["pulses"])
     assert rounds[-1] == bundle["latest_round"]
     assert rounds == list(range(rounds[0], rounds[-1] + 1)), "no holes in the window"
+
+
+# --- the challenge page's own inputs ----------------------------------------
+#
+# `?data=` is a development convenience that shipped to production, and it used to
+# accept anything. A link like
+#     challenge.html?data=https://attacker.example
+# made the page fetch somebody else's chain.json, and values from it reach innerHTML:
+# a hostile `round` executed script on the real origin. Confirmed firing before the
+# fix, on the page whose whole argument is that you should not have to trust anyone.
+
+CHALLENGE = (ROOT / "challenge.html").read_text()
+
+
+def test_the_data_parameter_cannot_point_off_origin():
+    """Anything with a scheme, or a protocol-relative //, falls back to the real chain."""
+    assert "function dataRoot()" in CHALLENGE
+    assert "raw.startsWith(\"//\")" in CHALLENGE
+    assert re.search(r"\/\^\[a-z\]\[a-z0-9\+\.\\?-\]\*:\/i", CHALLENGE), \
+        "the scheme test that blocks https:, javascript: and friends must stay"
+    assert 'return "./beacon"' in CHALLENGE
+
+
+def test_the_round_is_validated_before_it_reaches_the_page():
+    """Every later use is arithmetic or concatenation into innerHTML, so a value that
+    is not an integer must not get that far."""
+    assert "Number.isInteger(last.round)" in CHALLENGE
+    assert "Number.isInteger(d.latest_round)" in CHALLENGE
+    assert "HEX128.test(last.output)" in CHALLENGE
+
+
+def test_handles_and_guesses_from_other_people_are_escaped():
+    """The scoreboard renders GitHub logins and predicted values into innerHTML."""
+    assert "function escapeHtml(" in CHALLENGE
+    rows = CHALLENGE[CHALLENGE.index("const rows ="):CHALLENGE.index("$(\"b-rows\")")]
+    assert "escapeHtml(p.handle)" in rows
+    assert "escapeHtml(p.predicted" in rows
