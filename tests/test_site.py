@@ -174,3 +174,51 @@ def test_every_published_page_renders_in_standards_mode(name):
 def test_every_published_page_declares_its_language(name):
     """Screen readers pick a voice from this. Without it they guess."""
     assert re.search(r'<html[^>]*\blang="[a-z]{2}', (ROOT / name).read_text()), name
+
+
+# --- the chain window rolls mid-challenge -----------------------------------
+#
+# beacon/chain.json holds a bounded window, so once the beacon passes that many rounds
+# the file stops starting at round 1. At a ten-minute cadence that happens inside two
+# days of launching, which is inside the challenge period, and nothing covered it: a
+# partial window that failed to verify would turn the published chain into a live
+# demonstration of Beamline's own verification failing.
+
+def _live_chain():
+    return json.loads((ROOT / "beacon" / "chain.json").read_text())
+
+
+def test_a_window_that_no_longer_starts_at_round_one_still_verifies():
+    """What the published file becomes after the window rolls."""
+    bundle = _live_chain()
+    pulses = sorted(bundle["pulses"], key=lambda p: p["round"])
+    key = bundle["public_key"]
+
+    for keep in (2, 10, 50):
+        if len(pulses) < keep:
+            continue
+        window = pulses[-keep:]
+        assert window[0]["round"] > 1 or len(pulses) == keep
+        ok, why = V.check_chain(window, public_key_hex=key)
+        assert ok, f"a {keep}-pulse window failed to verify: {why}"
+
+
+def test_a_single_pulse_verifies_on_its_own():
+    """What somebody auditing one old draw actually holds."""
+    bundle = _live_chain()
+    newest = max(bundle["pulses"], key=lambda p: p["round"])
+    ok, why = V.check_pulse(newest, public_key_hex=bundle["public_key"])
+    assert ok, why
+
+
+def test_the_published_file_never_exceeds_its_declared_window():
+    bundle = _live_chain()
+    assert len(bundle["pulses"]) <= bundle["window"]
+
+
+def test_the_window_keeps_the_newest_pulses_not_the_oldest():
+    """The rollover must drop history, never the round people are predicting against."""
+    bundle = _live_chain()
+    rounds = sorted(p["round"] for p in bundle["pulses"])
+    assert rounds[-1] == bundle["latest_round"]
+    assert rounds == list(range(rounds[0], rounds[-1] + 1)), "no holes in the window"
