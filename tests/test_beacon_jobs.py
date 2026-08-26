@@ -572,3 +572,42 @@ def test_a_fresh_prediction_is_still_scored():
 def test_every_settled_label_is_one_the_scorer_actually_applies():
     """If a label were renamed in LABELS but not here, reopening would work again."""
     assert resolve.SETTLED <= set(resolve.LABELS)
+
+
+# --- the second-vs-millisecond boundary ------------------------------------
+#
+# Pulses carry millisecond timestamps; GitHub stamps issues to the second. Comparing
+# them directly understated creation by up to 999ms, so an issue created after a pulse
+# could be scored as though it had been lodged first.
+
+def test_an_issue_stamped_in_the_same_second_as_the_pulse_waits_for_the_next_round():
+    """04:50:04.900 is after a pulse emitted at 04:50:04.212, but GitHub reports
+    04:50:04Z. Scored on the start of that second it read as early."""
+    emitted = resolve.iso_to_ms("2026-08-26T04:50:04Z") + 212
+    same_second = issue("2026-08-26T04:50:04Z")
+    assert resolve.adjudicate(same_second, A, emitted)["verdict"] == "late"
+
+
+def test_an_issue_from_the_previous_second_is_still_scored():
+    """The fix must cost exactly one second of caution, not a whole round."""
+    emitted = resolve.iso_to_ms("2026-08-26T04:50:04Z") + 212
+    earlier = issue("2026-08-26T04:50:03Z")
+    assert resolve.adjudicate(earlier, A, emitted)["verdict"] == "early"
+
+
+def test_the_ambiguous_second_resolves_against_the_challenger_never_for_them():
+    """Across every millisecond offset a pulse can land on within one second, an issue
+    stamped in that same second is never credited as early."""
+    base = resolve.iso_to_ms("2026-08-26T04:50:04Z")
+    same_second = issue("2026-08-26T04:50:04Z")
+    for offset in range(0, 1000, 7):
+        assert resolve.adjudicate(same_second, A, base + offset)["verdict"] == "late"
+
+
+def test_a_guess_refused_on_the_boundary_is_not_thrown_away():
+    """It waits, like every late guess. The next pulse is ten minutes later."""
+    base = resolve.iso_to_ms("2026-08-26T04:50:04Z")
+    same_second = issue("2026-08-26T04:50:04Z")
+    assert resolve.adjudicate(same_second, A, base + 500)["verdict"] == "late"
+    next_pulse = base + 600_000
+    assert resolve.adjudicate(same_second, A, next_pulse)["verdict"] == "early"

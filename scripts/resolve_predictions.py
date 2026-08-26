@@ -100,11 +100,35 @@ def gh(path: str, method: str = "GET", body: dict | None = None) -> object:
         return json.loads(r.read() or b"null")
 
 
+#: `created_at` is stamped to the second, so it names a one-second interval rather than
+#: an instant. The true creation time is somewhere in [t, t+1000).
+CREATED_AT_RESOLUTION_MS = 1000
+
+
 def iso_to_ms(stamp: str) -> int:
-    """GitHub's `created_at`, which is always UTC with a trailing Z."""
+    """GitHub's `created_at`, which is always UTC with a trailing Z.
+
+    This is the START of the second the issue was created in, not the moment.
+    """
     from datetime import datetime, timezone
     return int(datetime.strptime(stamp, "%Y-%m-%dT%H:%M:%SZ")
                .replace(tzinfo=timezone.utc).timestamp() * 1000)
+
+
+def created_no_later_than(stamp: str) -> int:
+    """The latest instant an issue stamped `stamp` could actually have been created.
+
+    Pulses carry millisecond timestamps; GitHub stamps issues to the second. Comparing
+    the two directly understated the creation time by up to 999ms, so an issue created
+    at 04:50:04.900 -- after a pulse emitted at 04:50:04.212 -- reported 04:50:04.000
+    and was scored as though it had been lodged first.
+
+    Taking the end of the interval resolves that against the challenger, which is the
+    right direction: a guess that might have been lodged after the answer existed is
+    not scored against that round. It is not refused either. It stays open and the next
+    pulse takes it, ten minutes later, exactly like every guess that arrives late.
+    """
+    return iso_to_ms(stamp) + CREATED_AT_RESOLUTION_MS - 1
 
 
 #: Created if absent on every run. The issue form declares `labels: [prediction]`, and
@@ -205,9 +229,14 @@ def adjudicate(issue: dict, actual: str, emitted_ms: int) -> dict:
     """
     created_ms = iso_to_ms(issue["created_at"])
 
-    # The load-bearing check, and the only one that matters. An issue opened after the
-    # pulse was emitted has had the answer available to read.
-    if created_ms >= emitted_ms:
+    # The load-bearing check. An issue opened after the pulse was emitted has had the
+    # answer available to read.
+    #
+    # Compared at the END of the second GitHub stamped, because that stamp is an
+    # interval and this is the one comparison the whole challenge rests on. Using its
+    # start credited an issue created up to 999ms AFTER the pulse as having been lodged
+    # first. Ambiguity here resolves against the challenger and costs them one round.
+    if created_no_later_than(issue["created_at"]) >= emitted_ms:
         return {"verdict": "late", "created_ms": created_ms}
 
     guess = extract(issue.get("body") or "")
