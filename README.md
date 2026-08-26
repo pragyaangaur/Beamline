@@ -41,7 +41,10 @@ allocating limited stock, an auditor sampling 200 transactions out of four milli
 problem is never finding random numbers. It is producing evidence that convinces somebody
 who assumes you cheated.
 
-Beamline publishes a signed **beacon pulse** every minute, chained to the pulse before it.
+Beamline publishes a signed **beacon pulse** every ten minutes, chained to the pulse
+before it. (Ten minutes is the public beacon's cadence, set by the scheduled job in
+[`.github/workflows/beacon.yml`](.github/workflows/beacon.yml); a service you run
+yourself defaults to sixty seconds and is configurable.)
 You name your draw in public, wait for the next pulse, and derive the result from it. The
 pulse did not exist when you named the draw, so nobody could have picked the outcome, and
 afterwards anyone can recompute the result from the published pulse alone, with no account
