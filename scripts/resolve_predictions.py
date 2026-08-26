@@ -278,15 +278,23 @@ def main() -> None:
     scored = 0
     pending = 0
 
-    for issue in open_predictions(repo):
+    queue = open_predictions(repo)
+    for index, issue in enumerate(queue):
         if scored >= MAX_PER_RUN:
             # Oldest first, so the ones left behind are the newest. They keep their
             # target: an unscored issue is still open, and the next pulse is the next
             # round it could name.
-            print(f"reached the {MAX_PER_RUN} per run cap; the rest wait for the next "
-                  f"pulse", file=sys.stderr)
-            pending += 1
-            continue
+            #
+            # Stopped rather than skipped one at a time. This branch used to `continue`,
+            # printing the same line for every remaining issue, so the flood the cap
+            # exists to absorb produced a run log with thousands of identical lines in
+            # it. That log is one of the three public artefacts the challenge is audited
+            # from; burying it is a cost, not a cosmetic detail.
+            remaining = len(queue) - index
+            print(f"reached the {MAX_PER_RUN} per run cap; {remaining} prediction(s) "
+                  f"wait for the next pulse", file=sys.stderr)
+            pending += remaining
+            break
 
         call = adjudicate(issue, actual, emitted_ms)
         created_ms = call["created_ms"]
