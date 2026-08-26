@@ -518,7 +518,7 @@ def test_editing_the_body_after_publication_would_win_if_the_answer_were_public(
 
 
 def test_scoring_refuses_a_pulse_the_world_can_already_read(monkeypatch):
-    monkeypatch.setattr(resolve, "published_round", lambda: 81)
+    monkeypatch.setattr(resolve, "published_round", lambda repo=None: 81)
     with pytest.raises(SystemExit, match="already published"):
         resolve.check_target_is_unpublished(81)
     with pytest.raises(SystemExit, match="already published"):
@@ -527,14 +527,14 @@ def test_scoring_refuses_a_pulse_the_world_can_already_read(monkeypatch):
 
 def test_scoring_proceeds_for_the_round_that_has_not_been_pushed_yet(monkeypatch):
     """What the workflow actually does: emit N+1, score it, then publish it."""
-    monkeypatch.setattr(resolve, "published_round", lambda: 81)
+    monkeypatch.setattr(resolve, "published_round", lambda repo=None: 81)
     resolve.check_target_is_unpublished(82)     # must not raise
 
 
 def test_an_undeterminable_publication_state_fails_closed(monkeypatch):
     """A skipped round costs nothing -- the issues stay open and the next pulse takes
     them, which is what already happens when scoring fails. Guessing costs the prize."""
-    monkeypatch.setattr(resolve, "published_round", lambda: None)
+    monkeypatch.setattr(resolve, "published_round", lambda repo=None: None)
     with pytest.raises(SystemExit, match="cannot tell"):
         resolve.check_target_is_unpublished(82)
 
@@ -664,3 +664,35 @@ def test_an_empty_repository_lists_cleanly(monkeypatch):
 
 def test_the_listing_ceiling_leaves_room_for_a_full_run_of_scoring():
     assert resolve.MAX_LIST_PAGES * 100 > resolve.MAX_PER_RUN
+
+
+def test_the_published_reading_is_the_highest_any_source_reports(monkeypatch):
+    """One source saying "already public" settles it.
+
+    A local origin/main ref can lag the file GitHub actually serves -- it was observed
+    a round behind while this was being written -- and taking the lower reading would
+    wave through the exact pulse the guard exists to catch.
+    """
+    monkeypatch.setattr(resolve, "_round_from_git", lambda: 82)
+    monkeypatch.setattr(resolve, "_round_from_web", lambda repo: 83)
+    assert resolve.published_round("o/r") == 83
+    with pytest.raises(SystemExit, match="already published"):
+        resolve.check_target_is_unpublished(83, "o/r")
+
+
+def test_either_source_alone_is_enough(monkeypatch):
+    monkeypatch.setattr(resolve, "_round_from_web", lambda repo: None)
+    monkeypatch.setattr(resolve, "_round_from_git", lambda: 82)
+    assert resolve.published_round("o/r") == 82
+
+    monkeypatch.setattr(resolve, "_round_from_git", lambda: None)
+    monkeypatch.setattr(resolve, "_round_from_web", lambda repo: 82)
+    assert resolve.published_round("o/r") == 82
+
+
+def test_no_reading_at_all_refuses(monkeypatch):
+    monkeypatch.setattr(resolve, "_round_from_git", lambda: None)
+    monkeypatch.setattr(resolve, "_round_from_web", lambda repo: None)
+    assert resolve.published_round("o/r") is None
+    with pytest.raises(SystemExit, match="cannot tell"):
+        resolve.check_target_is_unpublished(99, "o/r")
