@@ -84,12 +84,30 @@ class AnuSource(Source):
         self.record_ok()
         return Sample(data=data, meta=meta)
 
+    #: Shortest response still treated as a block. Below this the endpoint is not
+    #: serving what it usually serves, whatever it is serving instead.
+    MIN_BLOCK_CHARS = 256
+
     async def _poll_public(self) -> tuple[bytes, dict]:
         r = await self._client.get(CONFIG.anu_url)
         r.raise_for_status()
-        text = r.text.strip()
-        if len(text) < 256 or "<" in text[:64]:
-            raise ValueError("response does not look like an entropy block")
+
+        # `blocks.validate` rather than a length-and-angle-bracket check.
+        #
+        # This path feeds every published pulse, and it was the only ingestion point
+        # that did not validate: the bulk harvester validates, the archive reader
+        # validates, and the live source -- the one whose bytes actually reach the
+        # beacon -- did not. `validate`'s own docstring says everything downstream
+        # assumes it ran, and downstream is the pool's entropy credit and the pulse
+        # provenance a sceptic reads.
+        #
+        # What got through: a JSON error body, a maintenance notice, or 1024 identical
+        # characters all clear "at least 256 long, no '<' in the first 64". Each was
+        # then conditioned and credited at 6 bits per byte -- a constant string was
+        # worth 4590 bits of quantum entropy, and the provenance recorded it as
+        # `anu_public_endpoint`. None of them survives the alphabet and degeneracy
+        # checks that were sitting unused two modules away.
+        text = B.validate(r.text, min_chars=self.MIN_BLOCK_CHARS)
         return _decode_alpha_block(text), {"provider": "anu_public_endpoint", "chars": len(text)}
 
     async def _poll_official(self) -> tuple[bytes, dict]:

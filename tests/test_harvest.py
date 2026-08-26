@@ -218,3 +218,66 @@ class TestController:
         h.request_stop()
         await asyncio.wait_for(task, timeout=2.0)
         assert h._baseline == pytest.approx(0.2, abs=1e-6)
+
+
+# --- the live source must validate what it ingests --------------------------
+#
+# This is the path that feeds every published pulse, and it was the only ingestion
+# point that did not validate. The bulk harvester validates, the archive reader
+# validates, and the live source -- whose bytes actually reach the beacon -- did not.
+# Its whole check was "at least 256 characters, no '<' in the first 64".
+
+class _Resp:
+    def __init__(self, text): self.text = text
+    def raise_for_status(self): pass
+
+
+class _Client:
+    def __init__(self, text): self._text = text
+    async def get(self, url): return _Resp(self._text)
+    async def aclose(self): pass
+
+
+def _source(text):
+    from beamline.sources.anu import AnuSource
+    src = AnuSource.__new__(AnuSource)
+    AnuSource.__init__(src)
+    src._client, src._api_key = _Client(text), None
+    return src
+
+
+def _genuine_block(n=1024, seed=5):
+    import random
+    rng = random.Random(seed)
+    return "".join(rng.choice(B.ALPHABET) for _ in range(n))
+
+
+async def test_a_genuine_block_is_still_ingested():
+    """The fix must not cost the beacon its quantum source."""
+    data, meta = await _source(_genuine_block())._poll_public()
+    assert meta["provider"] == "anu_public_endpoint"
+    assert meta["chars"] == 1024
+    assert len(data) == 765          # the length published pulses actually record
+
+
+@pytest.mark.parametrize("label,text", [
+    ("1024 identical characters", "A" * 1024),
+    ("a JSON error body",         '{"success":false,"message":"unavailable"}' * 10),
+    ("a maintenance notice",      "The ANU QRNG service is under maintenance. " * 15),
+    ("a repeated hex block",      ("deadbeef" * 8) * 16),
+    ("an HTML page",              "<html><body>error</body></html>" * 20),
+    ("a truncated response",      _genuine_block(100)),
+])
+async def test_things_that_are_not_entropy_are_refused(label, text):
+    """Every one of these cleared the old check, was conditioned, and was credited at
+    6 bits per byte as quantum entropy -- a constant string was worth 4590 bits -- with
+    the pulse provenance recording it as `anu_public_endpoint`."""
+    with pytest.raises(B.InvalidBlock):
+        await _source(text)._poll_public()
+
+
+async def test_a_refused_block_is_reported_not_silently_dropped():
+    """The source must show as failing, so the published `sources` block says so."""
+    src = _source("A" * 1024)
+    assert await src.poll() is None
+    assert src.consecutive_errors > 0 and src.last_error
