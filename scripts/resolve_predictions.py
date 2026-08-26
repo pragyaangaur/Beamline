@@ -195,20 +195,42 @@ def already_scored(issue: dict) -> bool:
     return bool({l["name"] for l in issue.get("labels", [])} & SETTLED)
 
 
-def open_predictions(repo: str) -> list[dict]:
-    issues, page = [], 1
-    while True:
+#: Hard ceiling on pages walked while listing. `MAX_PER_RUN` bounds how many issues are
+#: SCORED, at two API calls each, and was written against somebody scripting thousands
+#: of guesses. Listing walked every open issue regardless, one call per hundred, so the
+#: exhaustion the cap exists to prevent was reachable straight around it: enough open
+#: issues and the listing alone burns the hourly budget, `gh` raises on the 403, and
+#: scoring stops for everybody -- including the honest guesses the cap was protecting.
+#:
+#: Ten pages is a thousand issues, well past a run's scoring capacity, so under any
+#: normal load every prediction is still seen.
+MAX_LIST_PAGES = 10
+
+
+def open_predictions(repo: str, limit: int | None = None) -> tuple[list[dict], bool]:
+    """Open predictions, oldest first. Returns (issues, complete).
+
+    `complete` is False when the listing was cut short, which makes any count derived
+    from it a lower bound rather than a total. Said out loud because the alternative is
+    a scoreboard that quietly under-reports during exactly the flood it was built to
+    survive.
+    """
+    issues: list[dict] = []
+    for page in range(1, MAX_LIST_PAGES + 1):
         batch = gh(f"/repos/{repo}/issues?state=open"
                    f"&per_page=100&page={page}&sort=created&direction=asc")
         if not batch:
-            break
+            return issues, True
         # The issues endpoint returns pull requests too; they are not predictions.
         issues += [i for i in batch
                    if "pull_request" not in i and is_prediction(i)]
         if len(batch) < 100:
-            break
-        page += 1
-    return issues
+            return issues, True
+        # Sorted oldest first, and only `limit` of them can be scored this run, so the
+        # rest would be re-listed next round anyway.
+        if limit is not None and len(issues) >= limit:
+            return issues, False
+    return issues, False
 
 
 def extract(body: str) -> str | None:
@@ -408,7 +430,12 @@ def main() -> None:
     scored = 0
     pending = 0
 
-    queue = open_predictions(repo)
+    # Three times the cap, so issues that cost a slot without being scored (reopened,
+    # or lodged after this pulse) cannot starve the ones that would be.
+    queue, complete = open_predictions(repo, limit=MAX_PER_RUN * 3)
+    if not complete:
+        print(f"listing stopped at {len(queue)} open predictions; pending is a lower "
+              f"bound this run", file=sys.stderr)
     for index, issue in enumerate(queue):
         if scored >= MAX_PER_RUN:
             # Oldest first, so the ones left behind are the newest. They keep their
