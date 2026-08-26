@@ -107,13 +107,26 @@ CREATED_AT_RESOLUTION_MS = 1000
 
 
 def iso_to_ms(stamp: str) -> int:
-    """GitHub's `created_at`, which is always UTC with a trailing Z.
+    """Parse an ISO-8601 timestamp to epoch milliseconds.
 
-    This is the START of the second the issue was created in, not the moment.
+    GitHub currently returns `2026-08-26T04:50:04Z` for issues, and this was pinned to
+    exactly that shape with `strptime`. Anything else raised, and a raise here reaches
+    every issue at once rather than one of them, so the day GitHub adds fractional
+    seconds -- as it has on other endpoints -- scoring stops for everybody.
+
+    `fromisoformat` accepts the trailing Z, numeric offsets, and fractional seconds on
+    Python 3.11+, which is the floor this project already requires.
     """
     from datetime import datetime, timezone
-    return int(datetime.strptime(stamp, "%Y-%m-%dT%H:%M:%SZ")
-               .replace(tzinfo=timezone.utc).timestamp() * 1000)
+    parsed = datetime.fromisoformat(stamp.strip())
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=timezone.utc)
+    return int(parsed.timestamp() * 1000)
+
+
+def _has_subsecond(stamp: str) -> bool:
+    """Does this stamp actually resolve below a second?"""
+    return "." in stamp.split("T")[-1]
 
 
 def created_no_later_than(stamp: str) -> int:
@@ -129,6 +142,12 @@ def created_no_later_than(stamp: str) -> int:
     not scored against that round. It is not refused either. It stays open and the next
     pulse takes it, ten minutes later, exactly like every guess that arrives late.
     """
+    # Only pad a stamp that is genuinely second-resolution. If GitHub ever returns
+    # fractional seconds the exact moment is known, and widening it by a second would
+    # then be inventing doubt rather than respecting it -- refusing guesses that are
+    # provably early.
+    if _has_subsecond(stamp):
+        return iso_to_ms(stamp)
     return iso_to_ms(stamp) + CREATED_AT_RESOLUTION_MS - 1
 
 
