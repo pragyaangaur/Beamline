@@ -184,6 +184,42 @@ def adjudicate(issue: dict, actual: str, emitted_ms: int) -> dict:
             "prefix_bits": prefix_bits(guess, actual), "correct": guess == actual}
 
 
+#: Places on the published leaderboard.
+LEADERBOARD = 20
+
+
+def build_leaderboard(recent: list[dict]) -> list[dict]:
+    """Best-ever score per challenger, plus how many tries it took them.
+
+    Pure, and separate from `main`, for the same reason `adjudicate` is: it decides
+    something challengers read about themselves, so it has to be checkable without a
+    token or a network.
+
+    The two tallies are kept apart deliberately. They used to share one dictionary,
+    with `attempts` stored on whichever entry was current, so replacing that entry with
+    a better score threw the counter away and restarted it. A challenger who scored 5,
+    2 and then 9 bits was credited with one attempt rather than three: the board
+    remembered their hit and forgot their misses, which is backwards. Misses are the
+    thing this project asks people to accumulate.
+
+    Rebuilt from `recent`, so it is a rolling view over the last `RECENT` resolutions
+    rather than an all-time one. The complete record is the closed issues themselves.
+    """
+    best: dict[str, dict] = {}
+    attempts: dict[str, int] = {}
+    for r in recent:
+        handle = r["handle"]
+        attempts[handle] = attempts.get(handle, 0) + 1
+        cur = best.get(handle)
+        if cur is None or r["prefix_bits"] > cur["best_prefix_bits"]:
+            best[handle] = {"handle": handle, "best_prefix_bits": r["prefix_bits"],
+                            "issue": r["issue"], "round": r["round"]}
+    for handle, entry in best.items():
+        entry["attempts"] = attempts[handle]
+    return sorted(best.values(),
+                  key=lambda x: -x["best_prefix_bits"])[:LEADERBOARD]
+
+
 def load_board() -> dict:
     if BOARD.exists():
         try:
@@ -296,16 +332,7 @@ def main() -> None:
         # Best-ever score per challenger, which is the ranking people actually care
         # about. Rebuilt from `recent`, so it is a rolling view rather than an
         # all-time one; the complete record is the closed issues themselves.
-        best: dict[str, dict] = {}
-        for r in board["recent"]:
-            cur = best.get(r["handle"])
-            if cur is None or r["prefix_bits"] > cur["best_prefix_bits"]:
-                best[r["handle"]] = {"handle": r["handle"],
-                                     "best_prefix_bits": r["prefix_bits"],
-                                     "issue": r["issue"], "round": r["round"]}
-            best[r["handle"]]["attempts"] = best[r["handle"]].get("attempts", 0) + 1
-        board["leaderboard"] = sorted(
-            best.values(), key=lambda x: -x["best_prefix_bits"])[:20]
+        board["leaderboard"] = build_leaderboard(board["recent"])
 
     n = board["attempts"]
     board["updated_at_ms"] = int(time.time() * 1000)
