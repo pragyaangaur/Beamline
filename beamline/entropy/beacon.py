@@ -5,8 +5,20 @@ This is the part of the product that a customer cannot build for themselves out 
 
 Every `beacon_period_seconds` the service emits a *pulse*:
 
-    output = SHA-512( "beamline/pulse/v2" | round | timestamp | prev_output
-                      | local_value | public_key | provenance_digest )
+    output = SHA-512( VERSION + b"|" + canonical.encode(pulse.body()) )
+
+where `VERSION` is the string below and `body()` is the eight signed fields: version,
+round, timestamp_ms, period_seconds, prev_output, local_value, public_key, provenance.
+The signature covers `canonical.encode(body)` alone, without the version prefix.
+
+Both halves of that matter to anyone reimplementing the check, so neither is
+paraphrased here. The bytes are `canonical.encode`'s, not `json.dumps`'s -- see
+`entropy/canonical.py` for why a verifier that reaches for the latter will disagree
+with this one about which pulses are honest. And the version really is part of the
+preimage, so a pulse cannot be replayed under a later format that reads the same
+fields differently. `output` and `signature` are excluded, being derived from the body
+rather than inputs to it, which is why editing `output` alone leaves a pulse whose
+signature still verifies and whose contents no longer hash to it.
 
 Pulses form a hash chain, so changing any historical pulse invalidates every pulse
 after it. Each pulse is signed with the service's Ed25519 key when one is configured,
