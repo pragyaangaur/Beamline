@@ -313,23 +313,38 @@
 // prize. Here both are stamped by GitHub. The guess is an issue with a `created_at`
 // nobody can backdate; the pulse is a commit from a public Actions run.
 //
-// ?data=... repoints the page at a local directory during development.
 // `?data=` repoints the page at a local directory during development. It is
-// restricted to a same-origin relative path, because it used to accept anything.
+// restricted to a same-origin path, because it used to accept anything.
 //
 // A link like ?data=https://attacker.example made this page fetch somebody else's
 // chain.json, and the values in it reach innerHTML further down. A hostile `round`
 // executed script on this origin -- on the page whose whole argument is that you
 // should not have to trust the person running it.
+//
+// The first fix pattern-matched the string: reject a leading scheme, reject a leading
+// "//". That is the wrong tool, and it left the hole open. A browser's URL parser
+// treats a backslash as a slash in a special scheme, so `?data=/\evil.example` and
+// `?data=\\evil.example` both resolve to https://evil.example and neither one starts
+// with "//" or carries a scheme. Confirmed resolving off-origin in a real browser.
+//
+// So the guard no longer guesses what a string will mean. It resolves the value the
+// same way `fetch` will and keeps it only if the answer lands on this origin, which
+// is the actual question being asked.
 function dataRoot() {
   const raw = new URLSearchParams(location.search).get("data");
   if (!raw) return "./beacon";
-  const absolute = /^[a-z][a-z0-9+.\-]*:/i.test(raw) || raw.startsWith("//");
-  if (absolute) {
+  let resolved;
+  try {
+    resolved = new URL(raw.replace(/\/+$/, "") + "/", location.href);
+  } catch {
+    console.warn("ignoring an unparseable ?data= value; using the published chain");
+    return "./beacon";
+  }
+  if (resolved.origin !== location.origin) {
     console.warn("ignoring a cross-origin ?data= value; using the published chain");
     return "./beacon";
   }
-  return raw;
+  return resolved.href.replace(/\/$/, "");
 }
 const DATA = dataRoot();
 const REPO = "pragyaangaur/Beamline";
@@ -509,14 +524,33 @@ async function board(){
       : "Nothing has been resolved yet, so there is nothing to say about bias. This "
         + "field will not flatter the beacon until it can.";
 
+    // EVERY field here is escaped, including the ones that are supposed to be numbers.
+    //
+    // `round`, `issue` and `prefix_bits` were interpolated raw, on the reasoning that
+    // our own scorer writes them as integers. That reasoning does not hold where it is
+    // used: this file is fetched at runtime from whatever `?data=` resolves to, so
+    // "we wrote it" is not a property this function can check. A string in any of the
+    // three executed script on this origin -- `issue` by breaking out of the href
+    // attribute, the other two straight into a cell. All three confirmed firing in a
+    // browser before this change.
+    //
+    // `issue` is checked rather than escaped, because escaping only makes it inert:
+    // it still has to be an integer to be a link to an issue at all. A row that does
+    // not carry one renders the handle as plain text instead of guessing at a URL.
     const rows = (d.recent || []).map(p => {
       const state = p.correct ? '<span class="tag win">MATCH</span>'
                               : '<span class="tag miss">miss</span>';
-      return `<tr><td class="mono">${p.round}</td>`
-           + `<td><a href="https://github.com/${REPO}/issues/${p.issue}">`
-           + `${escapeHtml(p.handle)}</a></td>`
-           + `<td class="mono" style="color:var(--ink-3)">${escapeHtml(p.predicted.slice(0,16))}…</td>`
-           + `<td class="mono">${p.prefix_bits}</td><td>${state}</td></tr>`;
+      const handle = escapeHtml(p.handle);
+      const issue = Number.isInteger(p.issue) ? String(p.issue) : null;
+      // Guarded rather than assumed: `.slice` on a number throws, and the throw lands
+      // in board()'s catch, which would blank the whole scoreboard over one bad row.
+      const predicted = typeof p.predicted === "string" ? p.predicted.slice(0, 16) : "";
+      return `<tr><td class="mono">${escapeHtml(p.round)}</td>`
+           + `<td>${issue
+                ? `<a href="https://github.com/${REPO}/issues/${issue}">${handle}</a>`
+                : handle}</td>`
+           + `<td class="mono" style="color:var(--ink-3)">${escapeHtml(predicted)}…</td>`
+           + `<td class="mono">${escapeHtml(p.prefix_bits)}</td><td>${state}</td></tr>`;
     });
     $("b-rows").innerHTML = rows.length ? rows.join("")
       : '<tr><td colspan="5" style="color:var(--ink-3)">No attempts yet. Be the first.</td></tr>';
