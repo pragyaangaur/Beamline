@@ -768,3 +768,38 @@ def test_the_board_counts_an_issue_only_once_it_is_settled(monkeypatch):
         resolve.handle_issue(_ok_issue(1), "o/r", A, 84, resolve.iso_to_ms("2026-08-27T00:00:00Z"), board)
     assert board["attempts"] == 0, "an unsettled issue must not be counted"
     assert board["recent"] == []
+
+
+# --- timestamp parsing -----------------------------------------------------
+
+@pytest.mark.parametrize("stamp,offset_ms", [
+    ("2026-08-26T04:50:04Z",         0),
+    ("2026-08-26T04:50:04+00:00",    0),
+    ("2026-08-26T06:50:04+02:00",    0),      # same instant, different spelling
+    ("2026-08-26T04:50:04.123Z",     123),
+    ("2026-08-26T04:50:04.123456Z",  123),
+])
+def test_timestamps_parse_in_every_shape_github_might_return(stamp, offset_ms):
+    """This was pinned to one `strptime` format, and a raise here reaches every issue
+    at once rather than one of them. The day GitHub adds fractional seconds -- as it
+    has on other endpoints -- scoring would have stopped for everybody."""
+    base = resolve.iso_to_ms("2026-08-26T04:50:04Z")
+    assert resolve.iso_to_ms(stamp) - base == offset_ms
+
+
+def test_the_one_second_pad_applies_only_where_precision_is_missing():
+    """A second-resolution stamp names an interval and is widened to its end. A stamp
+    that already resolves below a second names a moment, and widening it would invent
+    doubt rather than respect it -- refusing guesses that are provably early."""
+    base = resolve.iso_to_ms("2026-08-26T04:50:04Z")
+    assert resolve.created_no_later_than("2026-08-26T04:50:04Z") - base == 999
+    assert resolve.created_no_later_than("2026-08-26T04:50:04.123Z") - base == 123
+
+
+def test_a_precise_stamp_is_still_scored_when_it_really_is_early():
+    """With real sub-second precision the boundary case stops being ambiguous."""
+    emitted = resolve.iso_to_ms("2026-08-26T04:50:04Z") + 500
+    early = issue("2026-08-26T04:50:04.100Z")
+    late = issue("2026-08-26T04:50:04.900Z")
+    assert resolve.adjudicate(early, A, emitted)["verdict"] == "early"
+    assert resolve.adjudicate(late, A, emitted)["verdict"] == "late"
