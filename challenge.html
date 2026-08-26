@@ -440,7 +440,12 @@ async function board(){
     // this whenever it lands, and `counted` stops it clobbering a fresher answer that
     // arrived first.
     if(!counted) $("s-tries").textContent = (d.attempts ?? 0) + (d.pending ?? 0);
-    $("b-total").textContent = d.attempts ?? 0;
+    // Lodged is resolved plus still-waiting. These two tiles were both showing
+    // `attempts`, so they were the same number under two different labels, and the
+    // one a challenger checks after opening an issue was the one that could not move
+    // until a pulse landed. "Predictions lodged" now includes the guesses a round has
+    // not reached yet, which is what the word means.
+    $("b-total").textContent = (d.attempts ?? 0) + (d.pending ?? 0);
     $("b-resolved").textContent = d.attempts ?? 0;
     $("b-hits").textContent = d.exact_hits ?? 0;
     $("b-best").textContent = d.best ? d.best.prefix_bits : "—";
