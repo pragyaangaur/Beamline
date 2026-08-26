@@ -20,9 +20,23 @@ from dataclasses import dataclass, field
 
 # Cutoffs computed for alpha = 2^-30 assuming a conservative 6 bits of min-entropy
 # per byte from a well-behaved source. See SP 800-90B 4.4.1 / 4.4.2.
-RCT_CUTOFF = 6            # ceil(1 + 30/H) with H=6
+RCT_CUTOFF = 6            # 1 + ceil(30/H) with H=6
 APT_WINDOW = 512
-APT_CUTOFF = 326          # binomial tail bound for p=2^-6 over 512 samples
+
+#: Smallest C with P(X >= C) <= 2^-30 for X ~ Binomial(512, 2^-6). The mean is 8.
+#:
+#: This was 326, which is the H=1 row: the cutoff for *binary* data, where p=1/2 and
+#: the mean is 256. Every other constant here assumes H=6, so the test was being read
+#: off the wrong row of the table and the number did not match the comment beside it.
+#:
+#: The consequence was not a tightening or a loosening, it was a test that could not
+#: fire. Reaching 326 matches in a 512-byte window means one value taking 64% of the
+#: output; a source that degenerates that far is already obvious from its Shannon
+#: estimate. A source emitting one value 17% of the time -- badly broken, and invisible
+#: to the Repetition Count Test if it never repeats consecutively -- passed 200,000
+#: bytes without a single flag. At 31 it is caught, and 2MB of os.urandom still raises
+#: nothing, which is the pair of properties this constant has to have.
+APT_CUTOFF = 31
 
 
 @dataclass

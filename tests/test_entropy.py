@@ -168,3 +168,77 @@ class TestPool:
         a.add("local_os", x); a.add("local_os", y)
         b.add("local_os", y); b.add("local_os", x)
         assert a.extract(32) != b.extract(32)
+
+
+# --- SP 800-90B continuous health tests ------------------------------------
+#
+# These cutoffs are the difference between noticing a dead entropy source and not.
+# APT_CUTOFF was read off the binary (H=1) row of the table while every other constant
+# in the module assumes H=6, which left the Adaptive Proportion Test unable to fire in
+# practice. Both cutoffs are pinned to their derivations here rather than to literals
+# somebody could "fix" back.
+
+def _apt_cutoff(window: int, h_bits: int, alpha: float) -> int:
+    """Smallest C with P(X >= C) <= alpha for X ~ Binomial(window, 2^-h_bits)."""
+    from math import comb
+    p = 2.0 ** -h_bits
+
+    def tail(c: int) -> float:
+        return sum(comb(window, k) * p**k * (1 - p) ** (window - k)
+                   for k in range(c, window + 1))
+
+    c = 1
+    while tail(c) > alpha:
+        c += 1
+    return c
+
+
+def test_the_health_cutoffs_match_their_own_derivation():
+    from math import ceil
+
+    from beamline.entropy import health as H
+
+    assert H.RCT_CUTOFF == 1 + ceil(30 / 6), "RCT cutoff is 1 + ceil(-log2(alpha)/H)"
+    assert H.APT_CUTOFF == _apt_cutoff(H.APT_WINDOW, 6, 2.0**-30)
+
+    # The specific wrong answer this had: the binary row, whose mean is 256 not 8.
+    assert H.APT_CUTOFF != _apt_cutoff(H.APT_WINDOW, 1, 2.0**-30)
+
+
+def test_the_adaptive_proportion_test_catches_what_the_repetition_test_cannot():
+    """A source stuck on one value, but never twice in a row.
+
+    The RCT only sees consecutive repeats, so this degradation is invisible to it and
+    the APT is the only thing standing between a broken source and the entropy credit
+    it does not deserve. At the old cutoff this passed 200,000 bytes unflagged.
+    """
+    import random
+
+    from beamline.entropy.health import SourceHealth
+
+    rng = random.Random(11)
+    out, last = bytearray(), None
+    while len(out) < 200_000:
+        b = 0x41 if (rng.random() < 0.20 and last != 0x41) else rng.randrange(256)
+        if b == last:
+            continue
+        out.append(b)
+        last = b
+
+    assert out.count(0x41) / len(out) > 0.10, "the fixture must actually be biased"
+
+    health = SourceHealth("degraded")
+    health.update(bytes(out))
+    assert health.quarantined, "a source this broken must not keep its entropy credit"
+    assert "adaptive proportion" in (health.last_failure or "")
+
+
+def test_a_healthy_source_is_not_quarantined():
+    """The other half. A cutoff that fires on real randomness trains people to ignore it."""
+    import os
+
+    from beamline.entropy.health import SourceHealth
+
+    health = SourceHealth("kernel")
+    assert health.update(os.urandom(1_000_000))
+    assert not health.quarantined and health.failures == 0
