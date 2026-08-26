@@ -153,3 +153,24 @@ def test_every_package_agrees_with_the_licence_the_repository_ships():
 def test_the_python_project_declares_the_same_licence():
     pyproject = (ROOT / "pyproject.toml").read_text()
     assert 'license = "LicenseRef-PolyForm-Noncommercial-1.0.0"' in pyproject
+
+
+@pytest.mark.parametrize("name", ["index.html", "challenge.html",
+                                  "examples/draw_page.html"])
+def test_every_published_page_renders_in_standards_mode(name):
+    """A page with no doctype is rendered in quirks mode, on the 1990s box model.
+
+    `examples/draw_page.html` had none. It is the artifact a customer hands to
+    entrants -- the "here is the draw, check it yourself" page -- so it is the one
+    example of the product a stranger sees finished, and it was being laid out under
+    rules no stylesheet here was written for.
+    """
+    text = (ROOT / name).read_text().lstrip()
+    assert text[:15].lower() == "<!doctype html>", f"{name} has no doctype"
+
+
+@pytest.mark.parametrize("name", ["index.html", "challenge.html",
+                                  "examples/draw_page.html"])
+def test_every_published_page_declares_its_language(name):
+    """Screen readers pick a voice from this. Without it they guess."""
+    assert re.search(r'<html[^>]*\blang="[a-z]{2}', (ROOT / name).read_text()), name
