@@ -1,5 +1,5 @@
 {
- "latest_round": 100,
+ "latest_round": 101,
  "period_seconds": 600,
  "public_key": "e17703e3755918e1421e2b1b15ddacaf59db0d54871db23ff503e94a9293e5ec",
  "pulses": [
@@ -4599,6 +4599,52 @@
    "round": 100,
    "signature": "75aaea1492b39bf5ec66645100c1bbed49ddb96000f262a314841adf1d1967b3deb30d8e44e4f32084075f873782ecc0b74cd5323586eac4efea7bbc4762b606",
    "timestamp_ms": 1787734249085,
+   "version": "beamline/pulse/v3"
+  },
+  {
+   "local_value": "52539b7cd314787b274bb2a4cd725a7289ca12dce25602140b13e1ab75f79fc100a77302f5e2ae6b5a8379efcf8af4eaba6f412aa3bdde79772dc58d6844f3f7",
+   "output": "d6fc92f74c05d6d6d3611a54fb88c7e4a357781157d08dca3453ceeda0c427e8ccd88e86e422a6d35762c9c49f156f3bd0deb58bd40684cdbd2d0a0104a2dc5a",
+   "period_seconds": 600,
+   "prev_output": "b3162730409e25b55895a09a09ef4615e3239343e49c3dec003bbf4d3ddb05845b537d8f0579ffddfcada0980a0b8effd52502275c86564f5ed42e95a2165504",
+   "provenance": {
+    "anu_qrng": {
+     "at_ms": 1787734845483,
+     "bytes": 765,
+     "chars": 1024,
+     "digest": "b32e58d73323219fde62e9087110983231d2456a50c5a0b019e8c3ecf0ea0014",
+     "provider": "anu_public_endpoint"
+    },
+    "astro": {
+     "advanced": true,
+     "at_ms": 1787734824089,
+     "bytes": 871,
+     "digest": "99f288c1973eda27d249ba9497db821e07defd1ecafb8fd28bee61c6fdd572d3",
+     "feeds": {
+      "goes_xray": {
+       "latest_time_tag": "2026-08-26T08:56:00Z",
+       "rows": 6
+      },
+      "solar_wind_mag": {
+       "latest_time_tag": "2026-08-26T08:56:01",
+       "rows": 6
+      },
+      "solar_wind_plasma": {
+       "latest_time_tag": "2026-08-26T08:54:07",
+       "rows": 6
+      }
+     }
+    },
+    "local_os": {
+     "at_ms": 1787734843792,
+     "bytes": 64,
+     "digest": "035292504b4949807f5196a9cbe38091a785211cde21aa3a23eab05e47c0086e",
+     "provider": "kernel getrandom(2)"
+    }
+   },
+   "public_key": "e17703e3755918e1421e2b1b15ddacaf59db0d54871db23ff503e94a9293e5ec",
+   "round": 101,
+   "signature": "80c31fc4c051c81b4d2a8a47c0401615b45aafe7dc3be80da116bb81a3d9ce3725f0ab25f5b6f54bda8590f2c8dffe19cbaf4a1e91c664449eefe21d9987b40d",
+   "timestamp_ms": 1787734848784,
    "version": "beamline/pulse/v3"
   }
  ],
