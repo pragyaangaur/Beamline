@@ -3,11 +3,11 @@
  "best": null,
  "exact_hits": 0,
  "expected_mean_prefix_bits": 1.0,
- "latest_round": 44,
+ "latest_round": 45,
  "leaderboard": [],
  "mean_prefix_bits": null,
  "pending": 0,
  "recent": [],
  "sum_prefix_bits": 0,
- "updated_at_ms": 1787702317827
+ "updated_at_ms": 1787702917950
 }
