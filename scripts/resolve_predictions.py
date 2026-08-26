@@ -153,6 +153,24 @@ def is_prediction(issue: dict) -> bool:
     return (issue.get("title") or "").strip().lower().startswith("prediction:")
 
 
+#: Applied when an issue has been through scoring. Seeing one on an OPEN issue means
+#: it was reopened after the fact.
+SETTLED = {"resolved", "unreadable"}
+
+
+def already_scored(issue: dict) -> bool:
+    """Has this issue already had its verdict?
+
+    Scoring closes an issue and labels it. Nothing stops the author reopening it, and
+    nothing here used to look, so a reopened issue went back through scoring as though
+    it were new -- keeping its original `created_at` forever. One issue lodged once
+    became an unlimited supply of attempts that are permanently "early", each one
+    landing in the attempt count, the leaderboard, and the running mean the README
+    offers as a public test for bias in the beacon.
+    """
+    return bool({l["name"] for l in issue.get("labels", [])} & SETTLED)
+
+
 def open_predictions(repo: str) -> list[dict]:
     issues, page = [], 1
     while True:
@@ -378,6 +396,14 @@ def main() -> None:
                   f"wait for the next pulse", file=sys.stderr)
             pending += remaining
             break
+
+        # Reopened after it was already settled. Close it again rather than scoring it
+        # twice; the verdict it was given is still on the issue.
+        if already_scored(issue):
+            print(f"issue #{issue['number']} was reopened after scoring; re-closing",
+                  file=sys.stderr)
+            gh(f"/repos/{repo}/issues/{issue['number']}", "PATCH", {"state": "closed"})
+            continue
 
         call = adjudicate(issue, actual, emitted_ms)
         created_ms = call["created_ms"]
