@@ -611,3 +611,56 @@ def test_a_guess_refused_on_the_boundary_is_not_thrown_away():
     assert resolve.adjudicate(same_second, A, base + 500)["verdict"] == "late"
     next_pulse = base + 600_000
     assert resolve.adjudicate(same_second, A, next_pulse)["verdict"] == "early"
+
+
+# --- listing must not walk around the per-run cap ---------------------------
+
+class _FakeGitHub:
+    """Stands in for `gh`, counting the API calls a listing costs."""
+
+    def __init__(self, n_open: int):
+        self.pages = [[{"number": i, "title": "prediction: x",
+                        "labels": [{"name": "prediction"}],
+                        "created_at": "2026-08-26T00:00:00Z",
+                        "user": {"login": "flooder"}, "body": A}
+                       for i in range(p, min(p + 100, n_open))]
+                      for p in range(0, max(n_open, 1), 100)]
+        self.calls = 0
+
+    def __call__(self, path, method="GET", body=None):
+        self.calls += 1
+        # "&page=" with the ampersand: splitting on "page=" also matches "per_page=".
+        page = int(path.split("&page=")[1].split("&")[0])
+        return self.pages[page - 1] if page - 1 < len(self.pages) else []
+
+
+def test_listing_is_bounded_so_a_flood_cannot_exhaust_the_api_budget(monkeypatch):
+    """MAX_PER_RUN caps SCORING at two calls each. Listing walked every open issue at
+    one call per hundred, so a big enough flood burned the hourly budget on the listing
+    alone, `gh` raised on the 403, and scoring stopped for everybody -- including the
+    honest guesses the cap was written to protect.
+    """
+    fake = _FakeGitHub(n_open=50_000)          # 500 pages if walked to the end
+    monkeypatch.setattr(resolve, "gh", fake)
+
+    issues, complete = resolve.open_predictions("o/r", limit=resolve.MAX_PER_RUN * 3)
+
+    assert not complete, "a truncated listing must say so"
+    assert fake.calls <= resolve.MAX_LIST_PAGES
+    assert len(issues) >= resolve.MAX_PER_RUN, "still enough to fill a run's scoring"
+
+
+def test_a_normal_number_of_predictions_is_listed_completely(monkeypatch):
+    fake = _FakeGitHub(n_open=37)
+    monkeypatch.setattr(resolve, "gh", fake)
+    issues, complete = resolve.open_predictions("o/r", limit=resolve.MAX_PER_RUN * 3)
+    assert complete and len(issues) == 37
+
+
+def test_an_empty_repository_lists_cleanly(monkeypatch):
+    monkeypatch.setattr(resolve, "gh", _FakeGitHub(n_open=0))
+    assert resolve.open_predictions("o/r", limit=10) == ([], True)
+
+
+def test_the_listing_ceiling_leaves_room_for_a_full_run_of_scoring():
+    assert resolve.MAX_LIST_PAGES * 100 > resolve.MAX_PER_RUN
