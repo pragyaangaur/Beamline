@@ -22,8 +22,23 @@ rule the API's `received_after_round` check enforced, moved somewhere it can be 
 
     GITHUB_TOKEN=... GITHUB_REPOSITORY=owner/repo python scripts/resolve_predictions.py
 
-Nothing here can change the pulse: this runs after `beacon_tick.py` has already written
-and committed it. The scoring is string equality, and every input to it is public.
+Nothing here can change the pulse: `beacon_tick.py` has already written and signed it
+before this runs. The scoring is string equality, and every input to it is public.
+
+ORDERING IS LOAD-BEARING, and this file used to describe it backwards. Scoring happens
+BEFORE the pulse is pushed, not after. That is not a detail of the workflow, it is the
+reason the challenge works at all:
+
+    beacon_tick.py   emits round N+1 into beacon/chain.json  (local, not yet public)
+    THIS SCRIPT      scores every open issue against round N+1
+    publish          pushes round N+1, making it public
+
+An issue's `created_at` is fixed by GitHub, but its BODY is not: the author can edit it
+at any time, and this script reads the guess out of the body when it scores. So the only
+thing stopping somebody lodging a placeholder, waiting for the answer, and editing it in
+is that the answer is not public yet when the scoring runs. `check_target_is_unpublished`
+enforces exactly that, out loud, instead of leaving the whole challenge resting on the
+order of two lines in a shell script.
 """
 
 from __future__ import annotations
@@ -31,6 +46,7 @@ from __future__ import annotations
 import json
 import os
 import re
+import subprocess
 import sys
 import time
 import urllib.error
@@ -250,6 +266,70 @@ def latest_pulse(bundle: dict) -> dict:
     return pulse
 
 
+def published_round() -> int | None:
+    """The newest round the PUBLIC chain has, per `origin/main`.
+
+    Read from git rather than the network: the workflow has already fetched origin at
+    the top of its loop, and the published file is what a challenger can actually see.
+    Returns None when it cannot be determined at all.
+    """
+    try:
+        out = subprocess.run(
+            ["git", "show", "origin/main:beacon/chain.json"],
+            cwd=ROOT, capture_output=True, text=True, timeout=30,
+        )
+    except Exception as e:
+        print(f"could not read the published chain: {e}", file=sys.stderr)
+        return None
+    if out.returncode != 0:
+        return None
+    try:
+        return json.loads(out.stdout).get("latest_round")
+    except json.JSONDecodeError:
+        return None
+
+
+def check_target_is_unpublished(round_no: int) -> None:
+    """Refuse to score against a pulse the world can already read.
+
+    This is the check that makes the challenge hold, and it was missing.
+
+    `created_at` cannot be forged, so the ordering half of the rule is safe. The guess
+    is not: it is read out of the issue body at scoring time, and an author can edit
+    that body whenever they like. Lodge a placeholder early, wait for the answer, paste
+    it in, and `adjudicate` sees an untouched early timestamp beside a perfect guess.
+    Verified against a real published pulse: verdict "early", 512 of 512 bits, exact
+    match, on a value copied after publication.
+
+    Nothing in the code stopped that. What stopped it was that the workflow scores
+    before it pushes, so the answer was not available to copy -- an invariant asserted
+    nowhere, tested nowhere, and one reordered line from silently voiding the prize.
+    This module's own usage line, run standalone against a checkout, scores against the
+    newest pulse in the file, which in any clone is already public.
+
+    Fail closed. A skipped round costs nothing: the issues stay open and the next pulse
+    scores them, which is what already happens whenever scoring fails.
+    """
+    published = published_round()
+    if published is None:
+        raise SystemExit(
+            "cannot tell whether round {n} is already public, so refusing to score.\n"
+            "This needs `git show origin/main:beacon/chain.json` to work, which means "
+            "running inside the repository with an origin remote fetched.\n"
+            "Scoring against a pulse anybody can already read lets a challenger edit "
+            "the answer into an issue lodged earlier.".format(n=round_no)
+        )
+    if published >= round_no:
+        raise SystemExit(
+            f"round {round_no} is already published (origin/main is at {published}), so "
+            f"its output is public and an open issue could have been edited to match it "
+            f"after the fact. Refusing to score.\n"
+            f"Scoring must run between `beacon_tick.py` and the push, which is what "
+            f".github/workflows/beacon.yml does. Predictions stay open and the next "
+            f"pulse resolves them."
+        )
+
+
 def load_board() -> dict:
     if BOARD.exists():
         try:
@@ -273,6 +353,9 @@ def main() -> None:
     pulse = latest_pulse(bundle)
     actual, round_no = pulse["output"], pulse["round"]
     emitted_ms = pulse["timestamp_ms"]
+
+    # Before anything is scored: is the answer still secret?
+    check_target_is_unpublished(round_no)
 
     board = load_board()
     scored = 0
