@@ -698,6 +698,246 @@
     ]
   },
   {
+    "target": "beacon",
+    "description": "published beacon pulse outputs (what the beacon PUBLISHES)",
+    "n_bits": 65536000,
+    "n_streams": 65,
+    "generated_at": 1787737705.4683058,
+    "sp80022_results": [
+      {
+        "test": "Frequency (Monobit)",
+        "p_values": 65,
+        "min_p": 0.010834,
+        "median_p": 0.485177,
+        "below_alpha": 0,
+        "expected_below_alpha": 0.65,
+        "proportion": 1.0,
+        "proportion_min": 0.953,
+        "passed": true
+      },
+      {
+        "test": "Block Frequency",
+        "p_values": 65,
+        "min_p": 0.042657,
+        "median_p": 0.439604,
+        "below_alpha": 0,
+        "expected_below_alpha": 0.65,
+        "proportion": 1.0,
+        "proportion_min": 0.953,
+        "passed": true
+      },
+      {
+        "test": "Runs",
+        "p_values": 65,
+        "min_p": 0.007955,
+        "median_p": 0.527706,
+        "below_alpha": 1,
+        "expected_below_alpha": 0.65,
+        "proportion": 0.9846,
+        "proportion_min": 0.953,
+        "passed": true
+      },
+      {
+        "test": "Longest Run of Ones",
+        "p_values": 65,
+        "min_p": 0.009166,
+        "median_p": 0.491926,
+        "below_alpha": 1,
+        "expected_below_alpha": 0.65,
+        "proportion": 0.9846,
+        "proportion_min": 0.953,
+        "passed": true
+      },
+      {
+        "test": "Binary Matrix Rank",
+        "p_values": 65,
+        "min_p": 0.007459,
+        "median_p": 0.458844,
+        "below_alpha": 1,
+        "expected_below_alpha": 0.65,
+        "proportion": 0.9846,
+        "proportion_min": 0.953,
+        "passed": true
+      },
+      {
+        "test": "Spectral (DFT)",
+        "p_values": 65,
+        "min_p": 0.035602,
+        "median_p": 0.550854,
+        "below_alpha": 0,
+        "expected_below_alpha": 0.65,
+        "proportion": 1.0,
+        "proportion_min": 0.953,
+        "passed": true
+      },
+      {
+        "test": "Non-overlapping Template",
+        "p_values": 9620,
+        "min_p": 4.9e-05,
+        "median_p": 0.503713,
+        "below_alpha": 92,
+        "expected_below_alpha": 96.2,
+        "proportion": 0.9904,
+        "proportion_min": 0.987,
+        "passed": true
+      },
+      {
+        "test": "Overlapping Template",
+        "p_values": 65,
+        "min_p": 0.001185,
+        "median_p": 0.572905,
+        "below_alpha": 2,
+        "expected_below_alpha": 0.65,
+        "proportion": 0.9692,
+        "proportion_min": 0.953,
+        "passed": true
+      },
+      {
+        "test": "Maurer Universal",
+        "p_values": 65,
+        "min_p": 0.021247,
+        "median_p": 0.439194,
+        "below_alpha": 0,
+        "expected_below_alpha": 0.65,
+        "proportion": 1.0,
+        "proportion_min": 0.953,
+        "passed": true
+      },
+      {
+        "test": "Linear Complexity",
+        "p_values": 65,
+        "min_p": 0.002746,
+        "median_p": 0.496512,
+        "below_alpha": 3,
+        "expected_below_alpha": 0.65,
+        "proportion": 0.9538,
+        "proportion_min": 0.953,
+        "passed": true
+      },
+      {
+        "test": "Serial",
+        "p_values": 130,
+        "min_p": 0.001683,
+        "median_p": 0.452975,
+        "below_alpha": 1,
+        "expected_below_alpha": 1.3,
+        "proportion": 0.9923,
+        "proportion_min": 0.9638,
+        "passed": true
+      },
+      {
+        "test": "Approximate Entropy",
+        "p_values": 65,
+        "min_p": 0.009185,
+        "median_p": 0.487495,
+        "below_alpha": 1,
+        "expected_below_alpha": 0.65,
+        "proportion": 0.9846,
+        "proportion_min": 0.953,
+        "passed": true
+      },
+      {
+        "test": "Cumulative Sums",
+        "p_values": 130,
+        "min_p": 0.01038,
+        "median_p": 0.53946,
+        "below_alpha": 0,
+        "expected_below_alpha": 1.3,
+        "proportion": 1.0,
+        "proportion_min": 0.9638,
+        "passed": true
+      },
+      {
+        "test": "Random Excursions",
+        "p_values": 288,
+        "min_p": 0.00163,
+        "median_p": 0.522672,
+        "below_alpha": 3,
+        "expected_below_alpha": 2.88,
+        "proportion": 0.9896,
+        "proportion_min": 0.9724,
+        "passed": true
+      },
+      {
+        "test": "Random Excursions Variant",
+        "p_values": 648,
+        "min_p": 0.004078,
+        "median_p": 0.502312,
+        "below_alpha": 7,
+        "expected_below_alpha": 6.48,
+        "proportion": 0.9892,
+        "proportion_min": 0.9783,
+        "passed": true
+      }
+    ],
+    "proportion_passed": 1.0,
+    "proportion_interval": [
+      0.9872123844189086,
+      0.9927876155810914
+    ],
+    "uniformity_p": 0.5591446441016612,
+    "min_entropy": 0.7463875391183864,
+    "entropy_estimates": [
+      {
+        "estimator": "Most Common Value",
+        "min_entropy": 0.994215,
+        "detail": "p_max=0.500721 upper=0.502009",
+        "skipped": false
+      },
+      {
+        "estimator": "Collision",
+        "min_entropy": 0.902365,
+        "detail": "v=400066 mean=2.4996 lower=2.4975 p=0.535009",
+        "skipped": false
+      },
+      {
+        "estimator": "Markov",
+        "min_entropy": 0.990877,
+        "detail": "chain=128 p00=0.5018 p11=0.5032",
+        "skipped": false
+      },
+      {
+        "estimator": "t-Tuple",
+        "min_entropy": 0.94154,
+        "detail": "t=15 p_max=0.519390",
+        "skipped": false
+      },
+      {
+        "estimator": "Longest Repeated Substring",
+        "min_entropy": 0.994968,
+        "detail": "u=16 v=36 p_max=0.500459",
+        "skipped": false
+      },
+      {
+        "estimator": "MultiMCW Prediction",
+        "min_entropy": 0.784525,
+        "detail": "global=0.50002 run=21 local=0.58054 windows=[63, 255, 1023, 4095]",
+        "skipped": false
+      },
+      {
+        "estimator": "Lag Prediction",
+        "min_entropy": 0.924959,
+        "detail": "global=0.50005 run=18 local=0.52670 best_lag=100",
+        "skipped": false
+      },
+      {
+        "estimator": "MultiMMC Prediction",
+        "min_entropy": 0.983013,
+        "detail": "global=0.49967 run=17 local=0.50592 best_order=2",
+        "skipped": false
+      },
+      {
+        "estimator": "LZ78Y Prediction",
+        "min_entropy": 0.746388,
+        "detail": "global=0.50066 run=22 local=0.59609 dict=65536",
+        "skipped": false
+      }
+    ],
+    "notes": [
+      "SP 800-90B estimator not implemented: 6.3.4 Compression (G(z) inversion not reproduced here)"
+    ]
+  },
+  {
     "target": "urandom",
     "description": "host kernel CSPRNG (experimental control)",
     "n_bits": 16000000,

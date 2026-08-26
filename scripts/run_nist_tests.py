@@ -9,7 +9,15 @@ Targets:
     raw-packed    the same blocks packed at 6 bits/symbol, assessed as a bitstream
     conditioned   hash-conditioned harvested blocks (what actually enters the pool)
     drbg          HMAC_DRBG output (what the API serves)
+    beacon        published pulse outputs (what the beacon PUBLISHES)
     urandom       the host kernel CSPRNG, as an experimental control
+
+`beacon` is the target that matches the public claim. Everything else here assesses an
+input to the beacon or a neighbouring output; the value a challenger is invited to
+predict is the pulse `output`, and it was the one path with no target of its own. It is
+produced by running the real emit path -- pool extraction, canonical encoding, SHA-512
+over the signed body, chained to its predecessor -- and concatenating the outputs, so
+what is assessed is the published artefact rather than a stand-in for it.
 """
 
 from __future__ import annotations
@@ -26,8 +34,11 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 import numpy as np
 
 from beamline.config import CONFIG
+from beamline.db import Database
 from beamline.entropy import blocks as Bl
+from beamline.entropy.beacon import Beacon
 from beamline.entropy.drbg import HmacDrbg
+from beamline.entropy.pool import EntropyPool
 from beamline.qa import report as R
 from beamline.qa import sp80090b
 from beamline.store import EntropyStore
@@ -38,21 +49,60 @@ def load_raw_chars(limit_blocks: int | None) -> str:
     return "".join(store.iter_all_chars(limit_blocks))
 
 
+def beacon_outputs(n_pulses: int) -> bytes:
+    """Emit `n_pulses` real pulses and return their outputs concatenated.
+
+    The real emit path, not an imitation of it: a live `EntropyPool` feeding
+    `Beacon.emit`, so every output is a SHA-512 over a canonically encoded, chained,
+    signed-shaped body exactly as the published ones are. That matters because this is
+    the target that backs the public claim, and a target that tested a reconstruction
+    of the pipeline would be evidence about the reconstruction.
+
+    Two liberties, both of which make the test harder rather than easier:
+
+      * No network sources. A runner has no ANU or NOAA feed, and waiting for one would
+        put a ten-minute cadence in front of thirty thousand pulses. The pool still
+        folds a fresh `os.urandom(64)` into every extraction, which is the input the
+        beacon's unpredictability actually rests on -- so this measures the pipeline
+        with its *weakest* credited configuration, not its best.
+      * `require_ready=False`, which is what `Beacon.emit` passes in production anyway.
+
+    Provenance is left empty, so the only field varying between consecutive bodies is
+    `local_value` (and the timestamp, and the chained `prev_output`). If the extraction
+    or the encoding leaked structure, this is where it would show.
+    """
+    import tempfile
+
+    with tempfile.TemporaryDirectory(prefix="beamline-nist-") as tmp:
+        db = Database(Path(tmp) / "beacon.db")
+        beacon = Beacon(db, EntropyPool(), period_seconds=600)
+        out = bytearray()
+        for i in range(n_pulses):
+            out += bytes.fromhex(beacon.emit()["output"])
+            if (i + 1) % 5000 == 0:
+                print(f"  emitted {i + 1:,}/{n_pulses:,} pulses", file=sys.stderr)
+        return bytes(out)
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--target", default="all",
-                    choices=["all", "raw-symbols", "raw-packed", "conditioned", "drbg", "urandom"])
+                    choices=["all", "raw-symbols", "raw-packed", "conditioned", "drbg",
+                             "beacon", "urandom"])
     ap.add_argument("--blocks", type=int, default=None, help="limit harvested blocks used")
     ap.add_argument("--stream-bits", type=int, default=1_000_000)
     ap.add_argument("--entropy-bits", type=int, default=1_000_000)
     ap.add_argument("--streams", type=int, default=None,
                     help="cap the number of 1 Mbit streams tested")
+    ap.add_argument("--beacon-pulses", type=int, default=32_000,
+                    help="pulses to emit for the `beacon` target (64 bytes of output each)")
     ap.add_argument("--json", metavar="PATH", help="also write the full report as JSON")
     args = ap.parse_args()
 
     targets = ([args.target] if args.target != "all"
-               else ["raw-symbols", "raw-packed", "conditioned", "drbg", "urandom"])
+               else ["raw-symbols", "raw-packed", "conditioned", "drbg", "beacon",
+                     "urandom"])
     reports = []
 
     chars = None
@@ -108,6 +158,9 @@ def main() -> int:
             need = max(len(chars) if chars else 0, 2_000_000)
             data = drbg.generate(need)
             desc = "HMAC_DRBG(SHA-512) output (what the API serves)"
+        elif t == "beacon":
+            data = beacon_outputs(args.beacon_pulses)
+            desc = "published beacon pulse outputs (what the beacon PUBLISHES)"
         else:
             import os
             data = os.urandom(2_000_000)
