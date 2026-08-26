@@ -803,3 +803,54 @@ def test_a_precise_stamp_is_still_scored_when_it_really_is_early():
     late = issue("2026-08-26T04:50:04.900Z")
     assert resolve.adjudicate(early, A, emitted)["verdict"] == "early"
     assert resolve.adjudicate(late, A, emitted)["verdict"] == "late"
+
+
+# --- the body GitHub actually renders --------------------------------------
+
+FORM_BODY = (
+    "### Your predicted output\n\n"
+    "{guess}\n\n"
+    "### How did you arrive at it?\n\n"
+    "_No response_\n\n"
+    "### Before you submit\n\n"
+    "- [X] I understand a pulse is 512 bits, so guessing one at random succeeds with "
+    "probability 2^-512\n"
+)
+
+
+def test_the_body_a_real_issue_form_produces_is_readable():
+    """The shape every genuine prediction actually arrives in.
+
+    Nothing pinned this. If the extraction ever stopped matching the rendered form,
+    every honest guess would be closed as unreadable and the failure would look like
+    challengers getting it wrong rather than the challenge being broken.
+    """
+    guess = "3f9a1c" + "0" * 122
+    assert resolve.extract(FORM_BODY.format(guess=guess)) == guess
+    # GitHub sends CRLF from some clients.
+    assert resolve.extract(FORM_BODY.format(guess=guess).replace("\n", "\r\n")) == guess
+    # And the form's own placeholder must not be mistaken for a guess.
+    assert resolve.extract(FORM_BODY.format(guess="_No response_")) is None
+
+
+@pytest.mark.parametrize("body", [
+    "0x" + "ab" * 64,          # prefixed
+    "`" + "ab" * 64 + "`",     # backtick wrapped
+    "```\n" + "ab" * 64 + "\n```",
+    "ab" * 64 + "   \n",       # trailing whitespace
+    ("AB" * 64),               # uppercase
+])
+def test_reasonable_ways_of_pasting_a_guess_are_accepted(body):
+    assert resolve.extract(body) == "ab" * 64
+
+
+@pytest.mark.parametrize("body", [
+    "ab" * 64 + "a",           # 129 chars
+    ("ab" * 64)[:-1],          # 127 chars
+    "ab" * 128,                # 256 chars, no clean boundary
+    "output_" + "ab" * 64,     # underscore is a word char, so no boundary
+    "٣" * 128,            # Arabic-Indic digits must not pass as hex
+    "abc" + "ab" * 64 + "def",
+])
+def test_things_that_are_not_a_512_bit_value_are_refused(body):
+    assert resolve.extract(body) is None
