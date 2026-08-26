@@ -451,3 +451,39 @@ def test_the_leaderboard_is_bounded():
 
 def test_an_empty_board_is_a_leaderboard_not_a_crash():
     assert resolve.build_leaderboard([]) == []
+
+
+def _bundle(rounds: list[int], latest: int | None = None) -> dict:
+    pulses = [{"round": r, "output": A, "timestamp_ms": EMITTED + r} for r in rounds]
+    return {"pulses": pulses,
+            "latest_round": rounds[-1] if latest is None else latest}
+
+
+def test_the_deciding_pulse_is_the_highest_round_not_the_last_line():
+    """Scoring must not depend on the file happening to be sorted.
+
+    `pulses[-1]` was correct only because a SQL ORDER BY elsewhere kept it so. This
+    value decides who wins a prize, and the identical assumption about the NOAA feed
+    shipped and had to be fixed in production, where the last row is a day old.
+    """
+    out_of_order = _bundle([7, 9, 8], latest=9)
+    assert resolve.latest_pulse(out_of_order)["round"] == 9
+
+
+def test_a_chain_file_that_contradicts_itself_scores_nobody():
+    """Two readings of "newest" that disagree means the file is wrong, not that one
+    of them should be picked. Resolving against the wrong value would close honest
+    predictions against a number the beacon may never have published."""
+    with pytest.raises(SystemExit):
+        resolve.latest_pulse(_bundle([7, 8, 9], latest=11))
+
+
+def test_an_empty_chain_is_refused_rather_than_indexed():
+    with pytest.raises(SystemExit):
+        resolve.latest_pulse({"pulses": [], "latest_round": 0})
+
+
+def test_the_real_published_chain_reads_cleanly():
+    """The live file, exactly as the beacon writes it."""
+    bundle = json.loads((ROOT / "beacon" / "chain.json").read_text())
+    assert resolve.latest_pulse(bundle)["round"] == bundle["latest_round"]
