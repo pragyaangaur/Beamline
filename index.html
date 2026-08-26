@@ -763,9 +763,24 @@ async function runChecks(silent) {
   $("checks").innerHTML = out.map((c) =>
     `<li class="${c.ok ? "ok" : c.unknown ? "unknown" : "bad"}"><span class="mk">${
        c.ok ? "✓" : c.unknown ? "?" : "✕"}</span>
-     <span class="nm">${c.nm}</span><span class="why">${c.why}</span></li>`).join("");
+     <span class="nm">${esc(c.nm)}</span><span class="why">${esc(c.why)}</span></li>`).join("");
   if (!silent) fill();
   return out;
+}
+
+/* Everything below writes into innerHTML, and some of it is whatever somebody typed
+   into the tamper fields. That is not a live hole on this page -- there are no URL
+   parameters, nothing is fetched, the chain is baked in, and `structureError` rejects a
+   malformed field before it renders -- so the only person who could inject is the one
+   already holding the keyboard.
+
+   It is escaped anyway. The sibling page had the same pattern with a URL parameter
+   feeding it, and that one did execute; the distance between the two is one refactor.
+   A page whose argument is that you should check things yourself should not need this
+   paragraph to explain why its own markup is safe. */
+function esc(v) {
+  return String(v).replace(/[&<>"']/g,
+    c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
 }
 
 function tamper(fn) {
@@ -785,9 +800,9 @@ let status = {};
 function paintChain() {
   $("c-body").innerHTML = working.map((p) => {
     const s = status[p.round] || { state: "idle", label: "unchecked" };
-    return `<tr><td>#${p.round}</td><td>${utc(p.timestamp_ms)}</td>
-      <td class="h">${p.output.slice(0, 14)}…</td>
-      <td><span class="st ${s.state}">${s.label}</span></td></tr>`;
+    return `<tr><td>#${esc(p.round)}</td><td>${esc(utc(p.timestamp_ms))}</td>
+      <td class="h">${esc(String(p.output).slice(0, 14))}…</td>
+      <td><span class="st ${esc(s.state)}">${esc(s.label)}</span></td></tr>`;
   }).join("");
 }
 
