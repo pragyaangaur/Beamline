@@ -1,54 +1,8 @@
 {
- "latest_round": 462,
+ "latest_round": 463,
  "period_seconds": 600,
  "public_key": "e17703e3755918e1421e2b1b15ddacaf59db0d54871db23ff503e94a9293e5ec",
  "pulses": [
-  {
-   "local_value": "cc3575e07d805ff61f0d1d86e26048779be300fb56f228551676f8a3607e8dbc3449f04e8dcc7411df539cf918207646e87f47f8089e08c10b8ac4c6ff60a760",
-   "output": "39488f84a17b49834f1f801a252e0ebd379c72d11a0aaff25616356e5f7b983b0a18ad902a1f0ad459d52ff5b8d5e102bcba16ca9da14b5c0c5cd09943ab110c",
-   "period_seconds": 600,
-   "prev_output": "d8d6006539a9e34ab133538683685578d05b908fe34d436380c7ac8c526a7994d73271d718f9ff56e1fd7c4052c7c13b3b5f9c7b8de468ab21ccfe08a0209175",
-   "provenance": {
-    "anu_qrng": {
-     "at_ms": 1787798700116,
-     "bytes": 765,
-     "chars": 1024,
-     "digest": "b05fe06217cfb76bd3066e26b52524907e7a70fb9ef14ea63b02ca64ab874fe9",
-     "provider": "anu_public_endpoint"
-    },
-    "astro": {
-     "advanced": true,
-     "at_ms": 1787798699637,
-     "bytes": 871,
-     "digest": "5c0ffb0c639a91c983d5b1984fc1e4add7276d86e76caf9eeecd4b746b6e06e1",
-     "feeds": {
-      "goes_xray": {
-       "latest_time_tag": "2026-08-27T02:41:00Z",
-       "rows": 6
-      },
-      "solar_wind_mag": {
-       "latest_time_tag": "2026-08-27T02:41:01",
-       "rows": 6
-      },
-      "solar_wind_plasma": {
-       "latest_time_tag": "2026-08-27T02:41:00",
-       "rows": 6
-      }
-     }
-    },
-    "local_os": {
-     "at_ms": 1787798719464,
-     "bytes": 64,
-     "digest": "2ec3622b4cbdf7a12ab9a3258cabfc773293e592475021c9668b18936a372284",
-     "provider": "kernel getrandom(2)"
-    }
-   },
-   "public_key": "e17703e3755918e1421e2b1b15ddacaf59db0d54871db23ff503e94a9293e5ec",
-   "round": 213,
-   "signature": "cfedf5827140b4e60d1e4f79f8b49f2293128834188e3ce8a4b6c2410f2a2ad0a91f5859fc8de3648b5645b469e96702adc286312804cfab274e3881985dff06",
-   "timestamp_ms": 1787798724455,
-   "version": "beamline/pulse/v3"
-  },
   {
    "local_value": "f1caba1977134e7ab51270636f264a97923cc482b8416fafc16a7ddf368a4cf9b370fc62cda75d2c6cde0d828ce090c6ec929c577ed7077ef39bad3fe718f42f",
    "output": "3a93ede3a62377f706a6f4393fe66cb5eef568091fc70e180a315108bbf530a953a4839180fb9977b4929f15bc2df738432b3787205b3904961cf838f39ebe90",
@@ -11498,6 +11452,52 @@
    "round": 462,
    "signature": "771890e30260689ccc07944593539d4fb82ef640a1815783ba0e099ce442541dada9cb5d1bb7d4232430aad2023d23013fd200c4f650adc0086d31e89ee83702",
    "timestamp_ms": 1788064653254,
+   "version": "beamline/pulse/v3"
+  },
+  {
+   "local_value": "5f42bb35d20f63d5b840342047d29f26babd80a95c7318bad3730eb892200e86a51c1e0f585a884e9b1835e51e748ada28adc05879881f556d930714b8f9ae1f",
+   "output": "445f7ad9a6f833e4986ecd03eb5705bf7001cd9f737288bbc7052cf8280020dbdc17cba2641d4e153c73fd1c3c6771c046fe966de229669a087e6f7102047f57",
+   "period_seconds": 600,
+   "prev_output": "58a4fc80ed70530553db3c525d6569109c0ffe1db0637f4d9803707e90658036b0f3226aacc05493befb8ed602740aeb7fb3619c8a1a501a84d40c13c0c06b57",
+   "provenance": {
+    "anu_qrng": {
+     "at_ms": 1788065249830,
+     "bytes": 765,
+     "chars": 1024,
+     "digest": "601b63806a5a1a4c5a628b7c5345f55ef17641526e477109e47e762e71ea699c",
+     "provider": "anu_public_endpoint"
+    },
+    "astro": {
+     "advanced": true,
+     "at_ms": 1788065228432,
+     "bytes": 871,
+     "digest": "4538c4178e1e5ae64f39ca1d4edc9691d6824637f0aa869be6bde61c0d59d5ce",
+     "feeds": {
+      "goes_xray": {
+       "latest_time_tag": "2026-08-30T04:43:00Z",
+       "rows": 6
+      },
+      "solar_wind_mag": {
+       "latest_time_tag": "2026-08-30T04:42:00",
+       "rows": 6
+      },
+      "solar_wind_plasma": {
+       "latest_time_tag": "2026-08-30T04:42:00",
+       "rows": 6
+      }
+     }
+    },
+    "local_os": {
+     "at_ms": 1788065248081,
+     "bytes": 64,
+     "digest": "4e114b96a633f49bd7dee911fedb563ae31b78b8ef63755c484fd5c183d4e28b",
+     "provider": "kernel getrandom(2)"
+    }
+   },
+   "public_key": "e17703e3755918e1421e2b1b15ddacaf59db0d54871db23ff503e94a9293e5ec",
+   "round": 463,
+   "signature": "6a0a81be5cd167ac8cf2ef34a055f774fd4ec98e401f301cd8403ad83ded6be23698e3fefe948f4f32d60630a5c39f42e3b09a7200852089f0773c50e67dc00c",
+   "timestamp_ms": 1788065253073,
    "version": "beamline/pulse/v3"
   }
  ],
