@@ -1,5 +1,7 @@
 # Running the live beacon
 
+The public beacon was stopped on 31 August 2026 at round 596, when the scheduled job in `.github/workflows/beacon.yml` was disabled. This file describes how to run a beacon of your own, or how to restart the public one. A restart leaves a visible gap in the chain from round 596 onwards.
+
 The beacon is the only part of Beamline that has to be hosted. Verification,
 the demo, the SDKs, and four of the five [breaks the README
 invites](README.md#try-to-break-it) all work against static files. What needs a

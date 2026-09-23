@@ -6,8 +6,7 @@ everyone a result they can check for themselves.
 [**Try it in your browser →**](https://pragyaangaur.github.io/Beamline/) Run a draw, then
 try to rig it. Nothing to install.
 
-[**Or try to break it →**](https://pragyaangaur.github.io/Beamline/challenge.html) Predict
-the next value the live beacon publishes, before it publishes it. There is a prize.
+**The public beacon was stopped on 31 August 2026.** Its last pulse is round 596, published at 08:54:34 UTC, and the prediction challenge closed the same day with nobody claiming the prize. The chain is frozen at that round and can still be verified. The [challenge page](https://pragyaangaur.github.io/Beamline/challenge.html) stays up as a record.
 
 ```bash
 pip install -e ".[dev,qa]"
@@ -41,10 +40,11 @@ allocating limited stock, an auditor sampling 200 transactions out of four milli
 problem is never finding random numbers. It is producing evidence that convinces somebody
 who assumes you cheated.
 
-Beamline publishes a signed **beacon pulse** every ten minutes, chained to the pulse
-before it. (Ten minutes is the public beacon's cadence, set by the scheduled job in
-[`.github/workflows/beacon.yml`](.github/workflows/beacon.yml); a service you run
-yourself defaults to sixty seconds and is configurable.)
+Beamline publishes a signed **beacon pulse** at a fixed interval, chained to the pulse
+before it. (The public beacon ran every ten minutes from the scheduled job in
+[`.github/workflows/beacon.yml`](.github/workflows/beacon.yml) until it was stopped on
+31 August 2026 at round 596. A service you run yourself defaults to sixty seconds and is
+configurable.)
 You name your draw in public, wait for the next pulse, and derive the result from it. The
 pulse did not exist when you named the draw, so nobody could have picked the outcome, and
 afterwards anyone can recompute the result from the published pulse alone, with no account
@@ -144,6 +144,8 @@ is actually running, which is what the next section is for.
 
 ## The standing challenge
 
+**Closed.** The offer closed at `2026-08-31T00:00:00Z` and the beacon was stopped later that day, at round 596. No prediction was scored and nobody claimed the prize. The rest of this section is kept as the record of the terms that applied while it ran.
+
 **Predict a pulse before it is published and a month of Claude Pro is yours.** One
 prize, and the first person to do it takes it. The terms live in this file, under public
 version control, so an edit made after somebody wins is itself a public record.
@@ -155,9 +157,9 @@ anybody makes. A guess lodged inside the window stays eligible even though the p
 that settles it lands afterwards; the deadline is on the guess, which is the only side
 of it a challenger controls.
 
-Two things the deadline does not do. It does not stop the beacon: pulses keep being
-emitted and predictions keep being scored after it, because the chain is the product and
-the prize is not. And it does not travel -- if the offer is ever extended, the extension
+The deadline was not meant to stop the beacon, because the chain is the product and the
+prize is not. The beacon was stopped separately, on 31 August 2026, when its scheduled job
+was disabled. And it does not travel -- if the offer is ever extended, the extension
 is a commit to this file with a timestamp on it, like everything else here.
 
 [**The challenge page**](https://pragyaangaur.github.io/Beamline/challenge.html) is the
@@ -188,8 +190,8 @@ is not refused. It simply waits for the next round, because the ordering is a fa
 about two clocks rather than a decision anyone makes. Resolution is string equality,
 and every input to it is public.
 
-The beacon runs from [`.github/workflows/beacon.yml`](.github/workflows/beacon.yml),
-emitting one signed pulse roughly every ten minutes into
+The beacon ran from [`.github/workflows/beacon.yml`](.github/workflows/beacon.yml) until
+31 August 2026, emitting one signed pulse roughly every ten minutes into
 [`beacon/chain.json`](beacon/chain.json). That file holds a rolling window; the full
 history is its git log, which is append-only and public. Scoring is
 [`scripts/resolve_predictions.py`](scripts/resolve_predictions.py), and the rule above
