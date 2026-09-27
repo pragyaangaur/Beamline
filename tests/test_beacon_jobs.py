@@ -265,16 +265,12 @@ def test_a_shutdown_failure_does_not_discard_the_pulse(tmp_path, monkeypatch):
     os.environ["BEAMLINE_BEACON_KEY"] = Ed25519PrivateKey.generate().private_bytes_raw().hex()
     monkeypatch.setattr(tick, "CHAIN", tmp_path / "chain.json")
 
-    real_service = None
-
     async def run():
-        nonlocal real_service
         from beamline.service import BeamlineService
 
         original = BeamlineService.stop
 
         async def exploding_stop(self):
-            real_service = self
             await original(self)
             raise RuntimeError("a source blew up on the way out")
 
