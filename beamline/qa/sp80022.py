@@ -563,7 +563,7 @@ def random_excursions(bits: np.ndarray) -> TestResult:
     for i in range(J):
         cycle = s[zero_positions[i]:zero_positions[i + 1] + 1]
         vals, cnts = np.unique(cycle, return_counts=True)
-        seen = dict(zip(vals.tolist(), cnts.tolist()))
+        seen = dict(zip(vals.tolist(), cnts.tolist(), strict=True))
         for st in states:
             counts[st][min(seen.get(st, 0), 5)] += 1
 

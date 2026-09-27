@@ -115,7 +115,7 @@ async def rotations():
     return {
         "count": len(records),
         "rotations": [
-            {**r, **dict(zip(("valid", "reason"), verify_rotation(r)))} for r in records
+            {**r, **dict(zip(("valid", "reason"), verify_rotation(r), strict=True))} for r in records
         ],
         "current_public_key": SERVICE.beacon.public_key_hex,
     }
