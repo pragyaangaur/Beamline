@@ -291,8 +291,8 @@ class TestGrinding:
         pulse = operator.emit()
         forged_receipt = {
             "version": V.COMMITMENT_VERSION, "commit_id": "0" * 32,
-            "tag": "after the fact", "target_round": 2,
-            "created_at_ms": 1787300000000, "created_after_round": 2,
+            "tag": "after the fact", "target_round": pulse["round"],
+            "created_at_ms": 1787300000000, "created_after_round": pulse["round"],
             "committer": "someone", "sequence": 1,
             "draw": {"kind": "integers", "count": 1, "min": 0, "max": 100,
                      "items_digest": None},
