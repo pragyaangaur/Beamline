@@ -450,16 +450,16 @@ def verify_rotation(record: dict, *, expect_from: str | None = None,
         return False, "ed25519 support is not installed"
 
     body = encode(rotation_body(record))
-    for field, key in (("signature_from", record["from_public_key"]),
+    for sig_name, key in (("signature_from", record["from_public_key"]),
                        ("signature_to", record["to_public_key"])):
-        sig = record.get(field)
+        sig = record.get(sig_name)
         if not isinstance(sig, str) or len(sig) != 128:
-            return False, f"{field} must be 128 hex characters"
+            return False, f"{sig_name} must be 128 hex characters"
         try:
             Ed25519PublicKey.from_public_bytes(bytes.fromhex(key)).verify(
                 bytes.fromhex(sig), body)
         except Exception:
-            return False, f"{field} is not a valid signature by {key[:16]}..."
+            return False, f"{sig_name} is not a valid signature by {key[:16]}..."
 
     if expect_from is not None and record["from_public_key"] != expect_from:
         return False, (f"rotation retires {record['from_public_key'][:16]}... but the "
