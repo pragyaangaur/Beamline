@@ -706,7 +706,7 @@ def _check_exclusivity(commitment: dict, siblings, allow_multiple: bool) -> tupl
                            f"is the point: picking among them after the pulse is "
                            f"grinding. Pass allow_multiple_commitments=True if you have "
                            f"a reason to accept it.")
-        return True, (f"it was the committer's only draw against that round"
+        return True, ("it was the committer's only draw against that round"
                       if len(mine) == 1 else
                       f"the committer registered {len(mine)} draws against that round "
                       f"and you chose to accept that")

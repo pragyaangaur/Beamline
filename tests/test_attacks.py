@@ -40,7 +40,7 @@ from beamline_client import verify as V  # noqa: E402
 
 from beamline.db import Database  # noqa: E402
 from beamline.entropy.beacon import (  # noqa: E402
-    GENESIS, VERSION, Beacon, Pulse, verify_chain, verify_pulse)
+    GENESIS, VERSION, Beacon, Pulse, verify_chain)
 from beamline.entropy.pool import EntropyPool  # noqa: E402
 
 ed25519 = pytest.importorskip(

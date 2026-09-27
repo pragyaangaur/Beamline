@@ -181,9 +181,9 @@ def main() -> int:
         f"{BASE}/v1/beacon/commitments/{draw.round}", timeout=10).json()["commitments"]
     ok_d, why_d = verify.check_draw(public_pulse, public_commit, draw.data, pk,
                                     count=3, minimum=1, maximum=5000, siblings=siblings)
-    say(f"All five questions at once -- authentic pulse, authentic receipt, receipt names")
-    say(f"this draw and its shape, it was the only draw registered for this round, and")
-    say(f"the numbers reproduce:")
+    say("All five questions at once -- authentic pulse, authentic receipt, receipt names")
+    say("this draw and its shape, it was the only draw registered for this round, and")
+    say("the numbers reproduce:")
     say(f"-> \033[1m{ok_d}\033[0m ({why_d})")
     say()
     chain = httpx.get(f"{BASE}/v1/beacon/chain?start=1&count=200", timeout=15).json()["pulses"]
