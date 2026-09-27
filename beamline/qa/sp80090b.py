@@ -37,7 +37,6 @@ suite would return.
 from __future__ import annotations
 
 import math
-from collections import Counter, defaultdict
 from dataclasses import dataclass
 
 import numpy as np
@@ -307,6 +306,15 @@ def _p_local(r: int, n: int, floor: float = 0.5) -> float:
     return (lo + hi) / 2
 
 
+def _longest_run(correct: np.ndarray) -> int:
+    """Length of the longest stretch of True values, without a Python loop."""
+    padded = np.concatenate(([0], np.asarray(correct, dtype=np.int8), [0]))
+    edges = np.flatnonzero(np.diff(padded))
+    if len(edges) == 0:
+        return 0
+    return int((edges[1::2] - edges[0::2]).max())
+
+
 def _predictor_entropy(name: str, correct: np.ndarray, detail: str = "",
                        alphabet: int = 2) -> Estimate:
     """Turn a predictor's hit/miss record into a min-entropy estimate.
@@ -321,11 +329,7 @@ def _predictor_entropy(name: str, correct: np.ndarray, detail: str = "",
     p_global = c / n
     p_global_u = _upper_bound(p_global, n)
 
-    longest = best = 0
-    for hit in correct:
-        best = best + 1 if hit else 0
-        if best > longest:
-            longest = best
+    longest = _longest_run(correct)
 
     # The full recurrence is O(n*r); cap the work for very long runs, where the
     # answer has already saturated near 1 anyway.
@@ -408,66 +412,98 @@ def lag(s: np.ndarray, max_lag: int = 128, alphabet: int = 2) -> Estimate:
     return _predictor_entropy("Lag Prediction", correct, f"best_lag={best}", alphabet)
 
 
+def _likeliest(counts: dict) -> object:
+    """The most frequent symbol, with ties going to the one seen first.
+
+    This is the same choice Counter.most_common(1) makes, at a fraction of the cost.
+    """
+    return max(counts, key=counts.__getitem__)
+
+
 def multi_mmc(s: np.ndarray, max_order: int = 16, alphabet: int = 2) -> Estimate:
-    """6.3.9 MultiMMC: Markov models of order 1..max_order, each counting successors."""
+    """6.3.9 MultiMMC: Markov models of order 1..max_order, each counting successors.
+
+    A context of length d is stored as one integer, the last d symbols read as a
+    base-A number. Building it from the context of length d-1 costs one multiply and
+    one add, where slicing a fresh tuple for every order at every step was the bulk of
+    the running time.
+    """
     n = len(s)
     max_order = min(max_order, n - 1)
     if max_order < 1:
         return Estimate("MultiMMC Prediction", 0.0, "sequence too short", skipped=True)
 
-    models = [defaultdict(Counter) for _ in range(max_order)]
+    sb = s.tolist()
+    base = max(alphabet, max(sb) + 1)
+    powers = [base ** k for k in range(max_order)]
+    models: list[dict[int, dict]] = [{} for _ in range(max_order)]
     scores = [0] * max_order
     correct = np.zeros(n, dtype=bool)
     winner = 0
-    sb = s.tolist()
+    best_score = 0
 
     for i in range(n):
-        preds = []
-        for d in range(1, max_order + 1):
-            if i < d:
-                preds.append(None)
-                continue
-            ctx = tuple(sb[i - d:i])
-            counts = models[d - 1].get(ctx)
-            preds.append(counts.most_common(1)[0][0] if counts else None)
-
-        if preds[winner] is not None and preds[winner] == sb[i]:
-            correct[i] = True
-        for d in range(max_order):
-            if preds[d] is not None and preds[d] == sb[i]:
+        x = sb[i]
+        top = min(max_order, i)
+        ctx = 0
+        winner_hit = False
+        for d in range(top):
+            ctx += sb[i - 1 - d] * powers[d]
+            table = models[d]
+            counts = table.get(ctx)
+            if counts is not None and _likeliest(counts) == x:
                 scores[d] += 1
-        for d in range(1, max_order + 1):
-            if i >= d:
-                models[d - 1][tuple(sb[i - d:i])][sb[i]] += 1
-        winner = int(np.argmax(scores))
+                if d == winner:
+                    winner_hit = True
+            if counts is None:
+                table[ctx] = {x: 1}
+            else:
+                counts[x] = counts.get(x, 0) + 1
+        correct[i] = winner_hit
+        # Same rule as np.argmax: the first order holding the top score wins.
+        best_score = max(scores)
+        winner = scores.index(best_score)
     return _predictor_entropy("MultiMMC Prediction", correct, f"best_order={winner + 1}", alphabet)
 
 
 def lz78y(s: np.ndarray, max_dict: int = 65536, b: int = 16, alphabet: int = 2) -> Estimate:
-    """6.3.10 LZ78Y: dictionary of contexts up to length b, predicting the likeliest next."""
+    """6.3.10 LZ78Y: dictionary of contexts up to length b, predicting the likeliest next.
+
+    Contexts are keyed by (length, integer value) for the same reason as in MultiMMC.
+    """
     n = len(s)
     if n < b + 2:
         return Estimate("LZ78Y Prediction", 0.0, "sequence too short", skipped=True)
 
-    table: dict[tuple, Counter] = {}
-    correct = np.zeros(n, dtype=bool)
     sb = s.tolist()
+    base = max(alphabet, max(sb) + 1)
+    powers = [base ** k for k in range(b)]
+    table: dict[tuple[int, int], dict] = {}
+    correct = np.zeros(n, dtype=bool)
+    keys = [None] * (b + 1)
 
     for i in range(b, n):
+        x = sb[i]
+        ctx = 0
+        for d in range(1, b + 1):
+            ctx += sb[i - d] * powers[d - 1]
+            keys[d] = (d, ctx)
         # Predict from the longest context already known to the dictionary.
         guess = None
         for d in range(b, 0, -1):
-            ctx = tuple(sb[i - d:i])
-            counts = table.get(ctx)
+            counts = table.get(keys[d])
             if counts:
-                guess = counts.most_common(1)[0][0]
+                guess = _likeliest(counts)
                 break
-        if guess is not None and guess == sb[i]:
+        if guess is not None and guess == x:
             correct[i] = True
         for d in range(1, b + 1):
-            ctx = tuple(sb[i - d:i])
-            if ctx in table or len(table) < max_dict:
-                table.setdefault(ctx, Counter())[sb[i]] += 1
+            key = keys[d]
+            counts = table.get(key)
+            if counts is not None:
+                counts[x] = counts.get(x, 0) + 1
+            elif len(table) < max_dict:
+                table[key] = {x: 1}
     return _predictor_entropy("LZ78Y Prediction", correct, f"dict={len(table)}", alphabet)
 
 
