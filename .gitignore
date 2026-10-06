@@ -47,3 +47,6 @@ package-lock.json
 
 # local editor/tooling config
 .claude/
+
+# Agent notes, kept local
+AGENTS.md
