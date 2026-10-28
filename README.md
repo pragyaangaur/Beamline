@@ -3,10 +3,10 @@
 **Provably fair draws.** Pick winners, sample records, or shuffle anything, and hand
 everyone a result they can check for themselves.
 
-[**Try it in your browser →**](https://pragyaangaur.github.io/Beamline/) Run a draw, then
+[**Try it in your browser →**](https://pragyaangaur.dev/Beamline/) Run a draw, then
 try to rig it. Nothing to install.
 
-**The public beacon was stopped on 31 August 2026.** Its last pulse is round 596, published at 08:54:34 UTC, and the prediction challenge closed the same day with nobody claiming the prize. The chain is frozen at that round and can still be verified. The [challenge page](https://pragyaangaur.github.io/Beamline/challenge.html) stays up as a record.
+**The public beacon was stopped on 31 August 2026.** Its last pulse is round 596, published at 08:54:34 UTC, and the prediction challenge closed the same day with nobody claiming the prize. The chain is frozen at that round and can still be verified. The [challenge page](https://pragyaangaur.dev/Beamline/challenge.html) stays up as a record.
 
 ```bash
 pip install -e ".[dev,qa]"
@@ -79,7 +79,7 @@ case where it has to be secret.
 
 ## Try it
 
-**[The interactive demo](https://pragyaangaur.github.io/Beamline/)** is the fastest way in.
+**[The interactive demo](https://pragyaangaur.dev/Beamline/)** is the fastest way in.
 Run a draw against a real signed pulse, then edit that pulse and watch the checks fail, or
 rewrite the chain and see what breaks. Ten genuine pulses are baked into the page, and
 everything runs in the browser. It is [`index.html`](index.html) at the repository root,
@@ -162,7 +162,7 @@ prize is not. The beacon was stopped separately, on 31 August 2026, when its sch
 was disabled. And it does not travel -- if the offer is ever extended, the extension
 is a commit to this file with a timestamp on it, like everything else here.
 
-[**The challenge page**](https://pragyaangaur.github.io/Beamline/challenge.html) is the
+[**The challenge page**](https://pragyaangaur.dev/Beamline/challenge.html) is the
 easy way in.
 
 ### How a prediction is timestamped, and why not by me
